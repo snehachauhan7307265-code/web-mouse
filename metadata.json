@@ -1,0 +1,6 @@
+{
+  "name": "WebMouse V1",
+  "description": "Turns your smartphone into a wireless touchpad, mouse, and keyboard for your Windows computer over Wi-Fi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
