@@ -10,6 +10,8 @@ export interface ConnectionConfig {
   host: string;
   port: number;
   code: string;
+  token?: string;
+  lastComputerName?: string;
   autoReconnect: boolean;
 }
 
@@ -37,7 +39,7 @@ export interface ConnectedDeviceInfo {
 }
 
 export type OutgoingMessage =
-  | { type: 'auth'; code: string; deviceName: string }
+  | { type: 'auth'; code: string; token?: string; deviceName: string }
   | { type: 'mouse_move'; dx: number; dy: number }
   | { type: 'left_click' }
   | { type: 'right_click' }
@@ -57,16 +59,29 @@ export type OutgoingMessage =
   | { type: 'share_link'; url: string }
   | { type: 'share_text'; text: string }
   | { type: 'get_clipboard' }
-  | { type: 'file_transfer_start'; filename: string; size: number }
-  | { type: 'file_chunk'; chunk: string }
-  | { type: 'file_transfer_end' };
+  | { type: 'file_transfer_start'; filename: string; size: number; transfer_id: string; total_chunks: number }
+  | { type: 'file_chunk'; transfer_id: string; chunk_index: number; chunk: string }
+  | { type: 'file_transfer_end'; transfer_id: string }
+  | { type: 'incoming_file_accept'; transfer_id: string }
+  | { type: 'incoming_file_reject'; transfer_id: string }
+  | { type: 'file_chunk_ack'; transfer_id: string; chunk_index: number }
+  | { type: 'file_transfer_cancel'; transfer_id: string };
 
 export type IncomingMessage =
-  | { type: 'auth_result'; success: boolean; message: string; computerName?: string; screenWidth?: number; screenHeight?: number }
+  | { type: 'auth_result'; success: boolean; message: string; token?: string; computerName?: string; screenWidth?: number; screenHeight?: number }
   | { type: 'pong'; timestamp: number }
   | { type: 'error'; message: string }
   | { type: 'notification'; message: string }
-  | { type: 'clipboard_data'; text: string };
+  | { type: 'clipboard_data'; text: string }
+  | { type: 'file_transfer_accepted'; transfer_id: string }
+  | { type: 'file_transfer_rejected'; transfer_id: string; reason: string }
+  | { type: 'file_chunk_ack'; transfer_id: string; chunk_index: number }
+  | { type: 'file_transfer_success'; transfer_id: string }
+  | { type: 'file_transfer_error'; transfer_id: string; message: string }
+  | { type: 'file_transfer_cancel'; transfer_id: string }
+  | { type: 'incoming_file_request'; transfer_id: string; filename: string; size: number; total_chunks: number }
+  | { type: 'file_chunk'; transfer_id: string; chunk_index: number; chunk: string }
+  | { type: 'file_transfer_end'; transfer_id: string };
 
 export interface LogEntry {
   id: string;

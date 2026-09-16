@@ -11,6 +11,7 @@ export class WebSocketClient {
   private onLatency: (latencyMs: number) => void;
   private onNotification?: (msg: string) => void;
   private onClipboardData?: (text: string) => void;
+  private onIncomingMessage?: (msg: any) => void;
   
   private pingInterval: any = null;
   private reconnectTimeout: any = null;
@@ -28,6 +29,7 @@ export class WebSocketClient {
       onLatency: (latencyMs: number) => void;
       onNotification?: (msg: string) => void;
       onClipboardData?: (text: string) => void;
+      onIncomingMessage?: (msg: any) => void;
     }
   ) {
     this.config = config;
@@ -38,6 +40,7 @@ export class WebSocketClient {
     this.onLatency = callbacks.onLatency;
     this.onNotification = callbacks.onNotification;
     this.onClipboardData = callbacks.onClipboardData;
+    this.onIncomingMessage = callbacks.onIncomingMessage;
   }
 
   public updateConfig(config: ConnectionConfig, deviceName: string) {
@@ -61,8 +64,10 @@ export class WebSocketClient {
   }
 
   public connect(isAutoReconnect = false) {
+    console.log('[WebSocketClient] connect called', { isAutoReconnect, rawHost: this.config.host });
     // If already connected or connecting, prevent duplicate socket
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+      console.log('[WebSocketClient] already connecting or open');
       return;
     }
 
@@ -108,10 +113,11 @@ export class WebSocketClient {
 
       this.socket.onopen = () => {
         this.addLog('sys', `Connected to ${wsUrl}. Sending authentication handshake...`);
-        // Step 1: Send authentication handshake with 6-digit code
+        // Step 1: Send authentication handshake with token or 6-digit code
         this.send({
           type: 'auth',
           code: this.config.code.trim(),
+          token: this.config.token,
           deviceName: this.deviceName || 'WebMouse Phone',
         });
       };
@@ -138,8 +144,10 @@ export class WebSocketClient {
         this.clearTimers();
 
         if (!this.isIntentionalDisconnect) {
-          if (this.status !== 'auth_failed') {
+          if (this.status !== 'auth_failed' && this.status !== 'error') {
             this.setStatus('disconnected');
+          }
+          if (this.status !== 'auth_failed') {
             this.onDeviceInfo(null);
             this.addLog('sys', `Disconnected from helper (close code: ${event.code})`);
 
@@ -210,6 +218,11 @@ export class WebSocketClient {
     } else if (data.type === 'clipboard_data') {
       this.addLog('rx', `Clipboard data received`);
       if (this.onClipboardData) this.onClipboardData(data.text);
+    }
+    
+    // Dispatch to generic message listener if present
+    if (this.onIncomingMessage) {
+      this.onIncomingMessage(data);
     }
   }
 

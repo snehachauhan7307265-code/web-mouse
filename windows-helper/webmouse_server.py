@@ -114,11 +114,109 @@ class WebMouseServer:
         self.authenticated_clients: Set[WebSocketServerProtocol] = set()
         self.client_info: Dict[WebSocketServerProtocol, str] = {}
         
+        # Token storage for persistent pairing
+        self.trusted_devices_file = Path.home() / "Downloads" / "WebMouse" / "trusted_devices.json"
+        self.trusted_devices_file.parent.mkdir(parents=True, exist_ok=True)
+        self.trusted_tokens = self._load_trusted_tokens()
+        
         # Screen dimensions
         try:
             self.screen_width, self.screen_height = pyautogui.size()
         except Exception:
             self.screen_width, self.screen_height = (1920, 1080)
+
+    def _load_trusted_tokens(self) -> Dict[str, dict]:
+        try:
+            if self.trusted_devices_file.exists():
+                with open(self.trusted_devices_file, "r") as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"Error loading trusted tokens: {e}")
+        return {}
+
+    def _save_trusted_tokens(self):
+        try:
+            with open(self.trusted_devices_file, "w") as f:
+                json.dump(self.trusted_tokens, f)
+        except Exception as e:
+            print(f"Error saving trusted tokens: {e}")
+
+    async def send_next_chunk(self, websocket, transfer_id):
+        self.active_uploads = getattr(self, "active_uploads", {})
+        if transfer_id not in self.active_uploads:
+            return
+            
+        upload = self.active_uploads[transfer_id]
+        chunk_size = 1024 * 512
+        offset = upload["chunk_index"] * chunk_size
+        
+        with open(upload["path"], "rb") as f:
+            f.seek(offset)
+            data = f.read(chunk_size)
+            
+        if data:
+            await websocket.send(json.dumps({
+                "type": "file_chunk",
+                "transfer_id": transfer_id,
+                "chunk_index": upload["chunk_index"],
+                "chunk": base64.b64encode(data).decode("utf-8")
+            }))
+        else:
+            await websocket.send(json.dumps({
+                "type": "file_transfer_end",
+                "transfer_id": transfer_id
+            }))
+            del self.active_uploads[transfer_id]
+            print(f"Finished sending file {transfer_id} to phone.")
+
+    async def watch_send_folder(self):
+        send_dir = Path.home() / "Downloads" / "WebMouse" / "SendToPhone"
+        send_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Watching folder for outgoing files to phone:\n  {send_dir}")
+        
+        while True:
+            await asyncio.sleep(2)
+            if not self.authenticated_clients:
+                continue
+                
+            for filepath in send_dir.iterdir():
+                if filepath.is_file():
+                    try:
+                        filename = filepath.name
+                        size = filepath.stat().st_size
+                        transfer_id = f"up_{random.randint(1000, 9999)}"
+                        
+                        self.active_uploads = getattr(self, "active_uploads", {})
+                        self.active_uploads[transfer_id] = {
+                            "path": filepath,
+                            "chunk_index": 0,
+                            "size": size
+                        }
+                        
+                        total_chunks = (size + (1024 * 512) - 1) // (1024 * 512)
+                        
+                        # Just send to the first authenticated client for now
+                        websocket = next(iter(self.authenticated_clients))
+                        await websocket.send(json.dumps({
+                            "type": "incoming_file_request",
+                            "transfer_id": transfer_id,
+                            "filename": filename,
+                            "size": size,
+                            "total_chunks": total_chunks
+                        }))
+                        print(f"Sent incoming_file_request for {filename}")
+                        
+                        # Move file so we don't send it again
+                        sent_dir = send_dir / "Sent"
+                        sent_dir.mkdir(exist_ok=True)
+                        dest_path = sent_dir / filename
+                        # Handle collision
+                        if dest_path.exists():
+                            base, ext = os.path.splitext(filename)
+                            dest_path = sent_dir / f"{base}_{random.randint(100, 999)}{ext}"
+                        os.rename(filepath, dest_path)
+                    except Exception as e:
+                        print(f"Error processing {filepath}: {e}")
 
     def print_banner(self):
         computer_name = socket.gethostname()
@@ -162,26 +260,45 @@ class WebMouseServer:
                 # 1. Authentication Handshake
                 if msg_type == "auth":
                     code = str(data.get("code", "")).strip()
+                    token = str(data.get("token", "")).strip()
                     device_name = str(data.get("deviceName", "Mobile Phone")).strip()
 
-                    if code == self.pairing_code:
+                    is_authenticated = False
+                    new_token = None
+
+                    if token and token in self.trusted_tokens:
+                        is_authenticated = True
+                        print(f"AUTHENTICATED: '{device_name}' from {client_addr} auto-reconnected via token.")
+                    elif code == self.pairing_code:
+                        is_authenticated = True
+                        import secrets
+                        new_token = secrets.token_hex(32)
+                        self.trusted_tokens[new_token] = {"device_name": device_name, "paired_at": str(Path.home())}
+                        self._save_trusted_tokens()
+                        print(f"AUTHENTICATED: '{device_name}' from {client_addr} paired successfully via code.")
+
+                    if is_authenticated:
                         self.authenticated_clients.add(websocket)
                         self.client_info[websocket] = f"{device_name} ({client_addr})"
-                        print(f"AUTHENTICATED: '{device_name}' from {client_addr} paired successfully.")
-                        await websocket.send(json.dumps({
+                        
+                        response = {
                             "type": "auth_result",
                             "success": True,
                             "computerName": socket.gethostname(),
                             "screenWidth": self.screen_width,
                             "screenHeight": self.screen_height,
                             "message": "Authentication successful"
-                        }))
+                        }
+                        if new_token:
+                            response["token"] = new_token
+                            
+                        await websocket.send(json.dumps(response))
                     else:
-                        print(f"AUTH FAILED: Wrong pairing code '{code}' from {client_addr}")
+                        print(f"AUTH FAILED: Invalid token or code from {client_addr}")
                         await websocket.send(json.dumps({
                             "type": "auth_result",
                             "success": False,
-                            "message": "Incorrect 6-digit pairing code"
+                            "message": "Incorrect pairing code or expired session"
                         }))
                     continue
 
@@ -395,6 +512,7 @@ class WebMouseServer:
                 # 21. File Transfer Phone -> PC
                 elif msg_type == "file_transfer_start":
                     filename = data.get("filename", "unknown_file")
+                    transfer_id = data.get("transfer_id", "")
                     downloads_dir = Path.home() / "Downloads" / "WebMouse"
                     downloads_dir.mkdir(parents=True, exist_ok=True)
                     
@@ -410,30 +528,106 @@ class WebMouseServer:
                         counter += 1
                         
                     self.active_file_transfers = getattr(self, "active_file_transfers", {})
-                    self.active_file_transfers[websocket] = open(filepath, "wb")
-                    print(f"FILE TRANSFER STARTED: {filepath}")
+                    if websocket not in self.active_file_transfers:
+                        self.active_file_transfers[websocket] = {}
+                        
+                    try:
+                        f = open(filepath, "wb")
+                        self.active_file_transfers[websocket][transfer_id] = {
+                            "file": f,
+                            "path": filepath
+                        }
+                        print(f"FILE TRANSFER ACCEPTED: {filepath}")
+                        await websocket.send(json.dumps({
+                            "type": "file_transfer_accepted",
+                            "transfer_id": transfer_id
+                        }))
+                    except Exception as e:
+                        print(f"Error opening file for transfer: {e}")
+                        await websocket.send(json.dumps({
+                            "type": "file_transfer_rejected",
+                            "transfer_id": transfer_id,
+                            "reason": str(e)
+                        }))
 
                 elif msg_type == "file_chunk":
+                    transfer_id = data.get("transfer_id", "")
+                    chunk_index = data.get("chunk_index", 0)
                     chunk = data.get("chunk", "")
-                    if websocket in getattr(self, "active_file_transfers", {}):
+                    
+                    active = getattr(self, "active_file_transfers", {}).get(websocket, {})
+                    if transfer_id in active:
                         try:
                             file_data = base64.b64decode(chunk)
-                            self.active_file_transfers[websocket].write(file_data)
+                            active[transfer_id]["file"].write(file_data)
+                            await websocket.send(json.dumps({
+                                "type": "file_chunk_ack",
+                                "transfer_id": transfer_id,
+                                "chunk_index": chunk_index
+                            }))
                         except Exception as e:
                             print(f"Error writing chunk: {e}")
 
                 elif msg_type == "file_transfer_end":
-                    if websocket in getattr(self, "active_file_transfers", {}):
+                    transfer_id = data.get("transfer_id", "")
+                    active = getattr(self, "active_file_transfers", {}).get(websocket, {})
+                    if transfer_id in active:
                         try:
-                            self.active_file_transfers[websocket].close()
-                            del self.active_file_transfers[websocket]
-                            print("FILE TRANSFER COMPLETE")
+                            active[transfer_id]["file"].close()
+                            del active[transfer_id]
+                            print("FILE TRANSFER SUCCESS")
+                            await websocket.send(json.dumps({
+                                "type": "file_transfer_success",
+                                "transfer_id": transfer_id
+                            }))
                             await websocket.send(json.dumps({
                                 "type": "notification",
-                                "message": "File successfully saved to Downloads/WebMouse"
+                                "message": "File received and saved to Downloads/WebMouse"
                             }))
                         except Exception as e:
                             print(f"Error closing file: {e}")
+                            
+                elif msg_type == "file_transfer_cancel":
+                    transfer_id = data.get("transfer_id", "")
+                    active = getattr(self, "active_file_transfers", {}).get(websocket, {})
+                    if transfer_id in active:
+                        try:
+                            active[transfer_id]["file"].close()
+                            filepath = active[transfer_id]["path"]
+                            if filepath.exists():
+                                os.remove(filepath)
+                            del active[transfer_id]
+                            print(f"FILE TRANSFER CANCELLED: {filepath}")
+                        except Exception as e:
+                            print(f"Error cancelling transfer: {e}")
+
+                # 22. Computer -> Phone Transfer (Architecture stub)
+                # To send a file from computer to phone, the server should send:
+                # { "type": "incoming_file_request", "transfer_id": "...", "filename": "...", "size": ... }
+                # Phone responds with "incoming_file_accept" or "incoming_file_reject"
+                elif msg_type == "incoming_file_accept":
+                    transfer_id = data.get("transfer_id", "")
+                    print(f"Phone accepted file transfer {transfer_id}. Server can now push chunks.")
+                    # Trigger chunk sending
+                    self.active_uploads = getattr(self, "active_uploads", {})
+                    if transfer_id in self.active_uploads:
+                        await self.send_next_chunk(websocket, transfer_id)
+                        
+                elif msg_type == "incoming_file_reject":
+                    transfer_id = data.get("transfer_id", "")
+                    print(f"Phone rejected file transfer {transfer_id}.")
+                    self.active_uploads = getattr(self, "active_uploads", {})
+                    if transfer_id in self.active_uploads:
+                        del self.active_uploads[transfer_id]
+                        
+                elif msg_type == "file_chunk_ack":
+                    transfer_id = data.get("transfer_id", "")
+                    chunk_index = data.get("chunk_index", 0)
+                    self.active_uploads = getattr(self, "active_uploads", {})
+                    if transfer_id in self.active_uploads:
+                        upload = self.active_uploads[transfer_id]
+                        upload["chunk_index"] = chunk_index + 1
+                        await self.send_next_chunk(websocket, transfer_id)
 
         except websockets.ConnectionClosed:
             pass
@@ -461,16 +655,20 @@ async def main():
     server = WebMouseServer(host=args.host, port=args.port, pairing_code=pairing_code)
     server.print_banner()
 
-    # Start the WebSocket server on port 8765
-    async with websockets.serve(
+    # Start the WebSocket server and the folder watcher concurrently
+    ws_server = websockets.serve(
         server.handle_connection,
         server.host,
         server.port,
         ping_interval=20,
         ping_timeout=20,
         max_size=10_000_000
-    ):
-        await asyncio.Future()
+    )
+    
+    await asyncio.gather(
+        ws_server,
+        server.watch_send_folder()
+    )
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MousePointer, Keyboard as KeyboardIcon, Scroll, Settings as SettingsIcon, AlertCircle, Wifi, Share2, MonitorPlay } from 'lucide-react';
 import { Header } from './components/Header';
+import { HomeTab } from './components/HomeTab';
 import { Touchpad } from './components/Touchpad';
 import { KeyboardTab } from './components/KeyboardTab';
 import { ShareTab } from './components/ShareTab';
@@ -15,6 +16,7 @@ import { ConnectionModal } from './components/ConnectionModal';
 import { WindowsHelperModal } from './components/WindowsHelperModal';
 import { AppSettings, ConnectionConfig, ConnectionStatus, ConnectedDeviceInfo, LogEntry, OutgoingMessage } from './types';
 import { WebSocketClient, triggerHaptic } from './services/websocketService';
+import { useFileTransfer } from './hooks/useFileTransfer';
 
 const DEFAULT_SETTINGS: AppSettings = {
   deviceName: 'WebMouse Phone',
@@ -85,8 +87,8 @@ export default function App() {
     }
   });
 
-  // Tab navigation: 'mouse' | 'keyboard' | 'share' | 'media' | 'settings'
-  const [activeTab, setActiveTab] = useState<'mouse' | 'keyboard' | 'share' | 'media' | 'settings'>('mouse');
+  // Tab navigation: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings'
+  const [activeTab, setActiveTab] = useState<'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings'>('home');
 
   const [pairedDevice, setPairedDevice] = useState<ConnectedDeviceInfo | null>(() => {
     try {
@@ -101,6 +103,7 @@ export default function App() {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [deviceInfo, setDeviceInfo] = useState<ConnectedDeviceInfo | null>(null);
   const [latencyMs, setLatencyMs] = useState<number | undefined>(undefined);
+  const [lastIncomingMessage, setLastIncomingMessage] = useState<any>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isActive, setIsActive] = useState(false);
   const activeTimerRef = useRef<any>(null);
@@ -119,6 +122,20 @@ export default function App() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   }, []);
+
+  const handleSendMessage = useCallback((msg: OutgoingMessage) => {
+    wsClientRef.current?.send(msg);
+    setIsActive(true);
+    if (activeTimerRef.current) clearTimeout(activeTimerRef.current);
+    activeTimerRef.current = setTimeout(() => setIsActive(false), 200);
+  }, []);
+
+  const { transfers, startUpload, cancelTransfer, acceptDownload, rejectDownload } = useFileTransfer(
+    handleSendMessage,
+    lastIncomingMessage,
+    triggerHaptic,
+    settings.vibration
+  );
 
   // Save settings to localStorage
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
@@ -153,7 +170,7 @@ export default function App() {
         setStatus(newStatus);
         if (newStatus === 'connected') {
           triggerHaptic('double', settings.vibration);
-          showToast(`Connected to ${wsClientRef.current?.getDeviceInfo()?.computerName || 'Windows PC'}`);
+          showToast('Connected to Windows PC');
         } else if (newStatus === 'auth_failed' || newStatus === 'error') {
           triggerHaptic('error', settings.vibration);
           if (newStatus === 'error') showToast('Connection lost');
@@ -189,6 +206,14 @@ export default function App() {
             showToast('Received clipboard, but phone denied paste permission.');
           });
         }
+      },
+      onIncomingMessage: (msg) => {
+        setLastIncomingMessage(msg);
+        
+        // Save the token to configuration for persistent pairing
+        if (msg.type === 'auth_result' && msg.success && msg.token) {
+          updateConfig({ ...config, token: msg.token, lastComputerName: msg.computerName || 'Windows PC' });
+        }
       }
     });
 
@@ -196,6 +221,13 @@ export default function App() {
       wsClientRef.current?.disconnect();
     };
   }, []);
+
+  // Auto-connect on mount if token and autoReconnect are set
+  useEffect(() => {
+    if (config.token && config.autoReconnect && wsClientRef.current) {
+      wsClientRef.current.connect(true);
+    }
+  }, []); // Run only once on mount
 
   // Synchronize config changes with client
   useEffect(() => {
@@ -245,17 +277,14 @@ export default function App() {
     try {
       localStorage.removeItem('webmouse_paired_device');
     } catch (e) {}
-    updateConfig({ ...config, code: '' }); // Clear auth code
+    const newConfig = { ...config, code: '' };
+    delete newConfig.token;
+    delete newConfig.lastComputerName;
+    updateConfig(newConfig); // Clear auth code and token
+    showToast('Device forgotten');
   };
 
-  const handleSendMessage = useCallback((msg: OutgoingMessage) => {
-    wsClientRef.current?.send(msg);
-    setIsActive(true);
-    if (activeTimerRef.current) clearTimeout(activeTimerRef.current);
-    activeTimerRef.current = setTimeout(() => setIsActive(false), 200);
-  }, []);
-
-  const handleTabChange = (tab: 'mouse' | 'keyboard' | 'share' | 'media' | 'settings') => {
+  const handleTabChange = (tab: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings') => {
     triggerHaptic('light', settings.vibration);
     setActiveTab(tab);
   };
@@ -332,6 +361,26 @@ export default function App() {
 
       {/* Main Screen Content View */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
+        {activeTab === 'home' && (
+          <HomeTab
+            status={status}
+            deviceInfo={deviceInfo}
+            pairedDevice={pairedDevice}
+            latencyMs={latencyMs}
+            logs={logs}
+            onNavigate={handleTabChange}
+            onClearLogs={() => setLogs([])}
+            onReconnect={() => {
+              if (config.token && config.autoReconnect && wsClientRef.current) {
+                wsClientRef.current.connect(true);
+              } else {
+                setIsConnectionModalOpen(true);
+              }
+            }}
+            onDisconnect={handleDisconnect}
+          />
+        )}
+
         {activeTab === 'mouse' && (
           <Touchpad
             onSendMessage={handleSendMessage}
@@ -353,6 +402,9 @@ export default function App() {
             onSendMessage={handleSendMessage}
             settings={settings}
             onUpdateSettings={updateSettings}
+            transfers={transfers}
+            onStartUpload={startUpload}
+            onCancelTransfer={cancelTransfer}
           />
         )}
 
@@ -375,12 +427,55 @@ export default function App() {
           />
         )}
       </main>
+      
+      {/* Incoming File Requests Overlay */}
+      <div className="absolute top-16 left-0 right-0 z-40 px-4 flex flex-col gap-2 pointer-events-none">
+        {transfers.filter(t => t.direction === 'download' && t.status === 'waiting_for_approval').map(t => (
+          <div key={t.id} className="pointer-events-auto bg-zinc-900 border border-indigo-500 shadow-2xl rounded-2xl p-4 flex flex-col gap-3 animate-in slide-in-from-top-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-bold text-white text-sm">Incoming File</h3>
+                <p className="text-xs text-zinc-400 mt-0.5 truncate max-w-[200px]">{t.filename}</p>
+                <p className="text-xs text-zinc-500">{(t.size / 1024 / 1024).toFixed(2)} MB</p>
+              </div>
+              <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-full">
+                 <AlertCircle className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-1">
+              <button onClick={() => acceptDownload(t.id)} className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-colors">
+                Accept
+              </button>
+              <button onClick={() => rejectDownload(t.id)} className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-sm font-semibold transition-colors">
+                Reject
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* Bottom Mobile Navigation Bar */}
       <nav 
         id="nav-bottom-tabs" 
         className="h-16 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 px-3 flex items-center justify-around select-none shrink-0 z-30"
       >
+        <button
+          id="tab-btn-home"
+          onClick={() => handleTabChange('home')}
+          className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
+            activeTab === 'home'
+              ? 'text-indigo-400 font-semibold'
+              : 'text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <div className={`p-1.5 rounded-xl transition-all ${
+            activeTab === 'home' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
+          }`}>
+            <MonitorPlay className="w-5 h-5" />
+          </div>
+          <span className="text-[10px] mt-0.5 tracking-tight">Home</span>
+        </button>
+
         <button
           id="tab-btn-mouse"
           onClick={() => handleTabChange('mouse')}
@@ -396,23 +491,6 @@ export default function App() {
             <MousePointer className="w-5 h-5" />
           </div>
           <span className="text-[10px] mt-0.5 tracking-tight">Mouse</span>
-        </button>
-
-        <button
-          id="tab-btn-keyboard"
-          onClick={() => handleTabChange('keyboard')}
-          className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
-            activeTab === 'keyboard'
-              ? 'text-indigo-400 font-semibold'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          <div className={`p-1.5 rounded-xl transition-all ${
-            activeTab === 'keyboard' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
-          }`}>
-            <KeyboardIcon className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] mt-0.5 tracking-tight">Keyboard</span>
         </button>
 
         <button

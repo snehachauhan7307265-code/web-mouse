@@ -1,22 +1,30 @@
 import React, { useState, useRef } from 'react';
-import { Send, Link2, FileUp, Image as ImageIcon, Video, History, ClipboardCopy, X } from 'lucide-react';
+import { Send, Link2, FileUp, Image as ImageIcon, ClipboardCopy, X, CheckCircle, AlertCircle, XCircle } from 'lucide-react';
 import { OutgoingMessage, AppSettings } from '../types';
 import { triggerHaptic } from '../services/websocketService';
+import { TransferTask } from '../hooks/useFileTransfer';
 
 interface ShareTabProps {
   onSendMessage: (msg: OutgoingMessage) => void;
   settings: AppSettings;
   onUpdateSettings: (newSettings: Partial<AppSettings>) => void;
+  transfers: TransferTask[];
+  onStartUpload: (file: File) => void;
+  onCancelTransfer: (id: string) => void;
 }
 
-export const ShareTab: React.FC<ShareTabProps> = ({ onSendMessage, settings, onUpdateSettings }) => {
+export const ShareTab: React.FC<ShareTabProps> = ({ 
+  onSendMessage, 
+  settings, 
+  onUpdateSettings, 
+  transfers,
+  onStartUpload,
+  onCancelTransfer
+}) => {
   const [textInput, setTextInput] = useState('');
   const [linkInput, setLinkInput] = useState('');
   const [activeView, setActiveView] = useState<'menu' | 'text' | 'link' | 'file' | 'history'>('menu');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Basic transfer state
-  const [transferStatus, setTransferStatus] = useState<{ filename: string; progress: number } | null>(null);
 
   const handleShareText = () => {
     if (!textInput.trim()) return;
@@ -44,45 +52,17 @@ export const ShareTab: React.FC<ShareTabProps> = ({ onSendMessage, settings, onU
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     triggerHaptic('heavy', settings.vibration);
-    onSendMessage({ type: 'file_transfer_start', filename: file.name, size: file.size });
+    files.forEach(file => {
+      onStartUpload(file);
+    });
     
-    setTransferStatus({ filename: file.name, progress: 0 });
-
-    const reader = new FileReader();
-    const chunkSize = 1024 * 512; // 512KB chunks
-    let offset = 0;
-
-    reader.onload = (e) => {
-      if (!e.target?.result) return;
-      const arrayBuffer = e.target.result as ArrayBuffer;
-      const base64Chunk = btoa(
-        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-      );
-      
-      onSendMessage({ type: 'file_chunk', chunk: base64Chunk });
-      
-      offset += chunkSize;
-      const progress = Math.min(100, Math.round((offset / file.size) * 100));
-      setTransferStatus({ filename: file.name, progress });
-
-      if (offset < file.size) {
-        readNextChunk();
-      } else {
-        onSendMessage({ type: 'file_transfer_end' });
-        setTimeout(() => setTransferStatus(null), 2000);
-      }
-    };
-
-    const readNextChunk = () => {
-      const slice = file.slice(offset, offset + chunkSize);
-      reader.readAsArrayBuffer(slice);
-    };
-
-    readNextChunk();
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   if (activeView === 'text') {
@@ -138,17 +118,55 @@ export const ShareTab: React.FC<ShareTabProps> = ({ onSendMessage, settings, onU
     <div className="flex-1 flex flex-col p-4 bg-zinc-950 text-white overflow-y-auto">
       <h2 className="text-2xl font-bold mb-6 mt-2 tracking-tight">Share to PC</h2>
       
-      {transferStatus && (
-        <div className="mb-6 p-4 bg-indigo-900/40 border border-indigo-500/30 rounded-2xl flex flex-col gap-2">
-          <div className="flex justify-between items-center text-sm">
-            <span className="font-medium text-indigo-100 truncate flex-1 mr-4">Uploading {transferStatus.filename}</span>
-            <span className="text-indigo-400 font-bold">{transferStatus.progress}%</span>
+      {/* Active File Transfers */}
+      <div className="flex flex-col gap-3 mb-6">
+        {transfers.filter(t => t.status !== 'waiting_for_approval').map(t => (
+          <div key={t.id} className={`p-4 border rounded-2xl flex flex-col gap-3 ${
+            t.status === 'error' ? 'bg-red-950/40 border-red-500/30' :
+            t.status === 'success' ? 'bg-green-950/40 border-green-500/30' :
+            'bg-zinc-900/60 border-zinc-800'
+          }`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-bold uppercase tracking-wider shrink-0">
+                    {t.direction === 'upload' ? 'Sent' : 'Received'}
+                  </span>
+                  <h3 className="font-bold text-sm text-zinc-100 truncate">{t.filename}</h3>
+                </div>
+                <p className="text-xs text-zinc-400 mt-1">
+                  {(t.size / 1024 / 1024).toFixed(2)} MB
+                  {(t.status === 'uploading' || t.status === 'downloading') && t.speedBytesPerSec > 0 && ` • ${(t.speedBytesPerSec / 1024 / 1024).toFixed(1)} MB/s`}
+                </p>
+              </div>
+              <div className="shrink-0 flex items-center gap-2">
+                {t.status === 'success' && <CheckCircle className="w-5 h-5 text-green-400" />}
+                {t.status === 'error' && <AlertCircle className="w-5 h-5 text-red-400" />}
+                {t.status === 'cancelled' && <XCircle className="w-5 h-5 text-zinc-500" />}
+                {t.status === 'pending' && <span className="text-xs text-zinc-500 font-semibold uppercase">Pending</span>}
+                {(t.status === 'uploading' || t.status === 'downloading' || t.status === 'pending') && (
+                  <button onClick={() => onCancelTransfer(t.id)} className="p-1.5 hover:bg-zinc-800 rounded-full text-zinc-400 transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+            
+            {(t.status === 'uploading' || t.status === 'downloading') && (
+              <div className="flex items-center gap-3">
+                <div className="flex-1 bg-zinc-950 rounded-full h-2 overflow-hidden">
+                  <div className="bg-indigo-500 h-2 rounded-full transition-all duration-300" style={{ width: `${t.progress}%` }}></div>
+                </div>
+                <span className="text-xs font-bold text-indigo-400 min-w-[32px] text-right">{t.progress}%</span>
+              </div>
+            )}
+            
+            {t.error && (
+              <p className="text-xs text-red-400">{t.error}</p>
+            )}
           </div>
-          <div className="w-full bg-indigo-950 rounded-full h-2.5 overflow-hidden">
-            <div className="bg-indigo-500 h-2.5 rounded-full transition-all duration-300" style={{ width: `${transferStatus.progress}%` }}></div>
-          </div>
-        </div>
-      )}
+        ))}
+      </div>
 
       <div className="grid grid-cols-2 gap-3 mb-6">
         <button
@@ -194,6 +212,7 @@ export const ShareTab: React.FC<ShareTabProps> = ({ onSendMessage, settings, onU
 
       <input 
         type="file" 
+        multiple
         className="hidden" 
         ref={fileInputRef}
         onChange={handleFileSelect}

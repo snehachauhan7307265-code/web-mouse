@@ -156,7 +156,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
           )}
 
           {/* Paired Device or Manual Form */}
-          {pairedDevice ? (
+          {config.token ? (
             <div className="space-y-4">
               <div className="p-4 rounded-xl bg-zinc-950/80 border border-indigo-500/30 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -165,15 +165,32 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">
-                      {pairedDevice.computerName || 'My Laptop'}
+                      {config.lastComputerName || pairedDevice?.computerName || 'My Laptop'}
                     </h3>
                     <p className="text-xs text-zinc-400">
-                      Saved Connection • {pairedDevice.ip}:{pairedDevice.port}
+                      Saved Connection • {config.host}:{config.port}
                     </p>
                   </div>
                 </div>
               </div>
               
+              {/* Auto-reconnect */}
+              <div className="flex items-center justify-between py-2 border-t border-zinc-800/50">
+                <label htmlFor="chk-auto-reconnect-paired" className="text-xs text-zinc-300 cursor-pointer">
+                  Automatically reconnect
+                </label>
+                <input
+                  id="chk-auto-reconnect-paired"
+                  type="checkbox"
+                  checked={autoReconnect}
+                  onChange={(e) => {
+                     setAutoReconnect(e.target.checked);
+                     onSaveAndConnect({ ...config, autoReconnect: e.target.checked });
+                  }}
+                  className="w-4 h-4 accent-indigo-500 rounded bg-zinc-900 border-zinc-700 cursor-pointer"
+                />
+              </div>
+
               {/* Action Buttons */}
               <div className="flex flex-col gap-2.5">
                 {isConnected ? (
