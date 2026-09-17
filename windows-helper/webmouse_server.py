@@ -219,25 +219,14 @@ class WebMouseServer:
                         print(f"Error processing {filepath}: {e}")
 
     def print_banner(self):
-        computer_name = socket.gethostname()
-        ip = get_local_ip()
-        print("\n" + "=" * 48)
-        print("                  WEBMOUSE V1")
-        print("    Phone -> Computer control over Wi-Fi")
-        print("=" * 48)
-        print(f"Status:       Running")
-        print(f"Computer:     {computer_name}")
-        print(f"Computer IP:  {ip}")
-        print(f"Port:         {self.port}")
-        print(f"Pairing Code: {self.pairing_code}")
-        print("-" * 48)
-        print("Open WebMouse on your smartphone browser:")
-        print("1. Connect phone to same Wi-Fi as this PC")
-        print(f"2. Enter Computer IP:  {ip}")
-        print(f"3. Enter Pairing Code: {self.pairing_code}")
-        print("4. Tap 'Connect'")
-        print("=" * 48 + "\n")
-        print("Awaiting connection from phone...\n")
+        print("\n" + "=" * 40)
+        print("        WEBMOUSE V1")
+        print("=" * 40 + "\n")
+        print(f"PAIRING CODE: {self.pairing_code}\n")
+        print("Enter this 6-digit code on your phone.\n")
+        print(f"Server: {self.host}:{self.port}")
+        print("Status: Waiting for phone...\n")
+        print("=" * 40 + "\n")
 
     async def handle_connection(self, websocket: WebSocketServerProtocol):
         peer = websocket.remote_address
@@ -671,7 +660,8 @@ async def main():
     if args.code and len(args.code) == 6:
         pairing_code = args.code
     else:
-        pairing_code = f"{random.randint(100000, 999999)}"
+        import secrets
+        pairing_code = f"{secrets.randbelow(900000) + 100000}"
 
     server = WebMouseServer(host=args.host, port=args.port, pairing_code=pairing_code)
     server.print_banner()

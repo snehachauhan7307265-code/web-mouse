@@ -48,13 +48,12 @@ export function QRCodePairing({ host, port, code, onClose }: QRCodePairingProps)
         <div className="flex flex-col items-center gap-1 w-full text-center mb-2">
           <h3 className="font-semibold text-white">Host PC</h3>
           <p className="text-zinc-400 font-mono text-sm bg-zinc-900 px-3 py-1 rounded-lg">
-            {host ? `${host}:${port}` : `IP Not Set : ${port}`}
+            {host ? `${host}:${port}` : `Waiting for Windows Helper...`}
           </p>
-          {code && (
-            <p className="text-zinc-400 font-mono text-sm bg-zinc-900 px-3 py-1 rounded-lg mt-1">
-              Pairing Code: {code}
-            </p>
-          )}
+          <div className="mt-3 p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl w-full text-center">
+             <p className="text-xs text-zinc-300 font-medium mb-1">Pairing code is shown in the Windows Helper CMD.</p>
+             <p className="text-xl tracking-[0.2em] font-mono text-zinc-500 font-bold">••••••</p>
+          </div>
         </div>
 
         <div className="mt-6 pt-6 border-t border-zinc-800/80 w-full">
