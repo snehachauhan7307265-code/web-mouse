@@ -65,9 +65,11 @@ export type OutgoingMessage =
   | { type: 'incoming_file_accept'; transfer_id: string }
   | { type: 'incoming_file_reject'; transfer_id: string }
   | { type: 'file_chunk_ack'; transfer_id: string; chunk_index: number }
-  | { type: 'file_transfer_cancel'; transfer_id: string };
+  | { type: 'file_transfer_cancel'; transfer_id: string }
+  | { type: 'webrtc_signaling'; signalType: 'offer' | 'answer' | 'ice_candidate' | 'stop'; payload?: any };
 
 export type IncomingMessage =
+  | { type: 'server_info'; ip: string; port: number; version: number }
   | { type: 'auth_result'; success: boolean; message: string; token?: string; computerName?: string; screenWidth?: number; screenHeight?: number }
   | { type: 'pong'; timestamp: number }
   | { type: 'error'; message: string }
@@ -81,7 +83,8 @@ export type IncomingMessage =
   | { type: 'file_transfer_cancel'; transfer_id: string }
   | { type: 'incoming_file_request'; transfer_id: string; filename: string; size: number; total_chunks: number }
   | { type: 'file_chunk'; transfer_id: string; chunk_index: number; chunk: string }
-  | { type: 'file_transfer_end'; transfer_id: string };
+  | { type: 'file_transfer_end'; transfer_id: string }
+  | { type: 'webrtc_signaling'; signalType: 'offer' | 'answer' | 'ice_candidate' | 'stop'; payload?: any };
 
 export interface LogEntry {
   id: string;

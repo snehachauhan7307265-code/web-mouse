@@ -138,17 +138,18 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Control media</p>
         </button>
 
-        <div 
-          className="flex flex-col items-start p-4 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 opacity-60 cursor-not-allowed"
+        <button 
+          onClick={() => onNavigate('projector')}
+          className="flex flex-col items-start p-4 rounded-2xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 transition-all active:scale-95"
         >
-          <div className="p-2 bg-zinc-800 rounded-lg mb-3 text-zinc-400">
+          <div className="p-2 bg-rose-500/10 text-rose-400 rounded-lg mb-3">
             <MonitorUp className="w-5 h-5" />
           </div>
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-zinc-300">Presentation</h3>
+            <h3 className="font-semibold text-zinc-100">Projector</h3>
           </div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 mt-1">Coming Soon</span>
-        </div>
+          <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Share live screen</p>
+        </button>
       </div>
 
       {/* 5. Recent Activity */}

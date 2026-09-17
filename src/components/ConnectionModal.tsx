@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { X, Wifi, ShieldCheck, Monitor, HelpCircle, ArrowRight, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { X, Wifi, ShieldCheck, Monitor, HelpCircle, ArrowRight, CheckCircle2, AlertTriangle, RefreshCw, QrCode, Scan } from 'lucide-react';
 import { ConnectionConfig, ConnectionStatus, ConnectedDeviceInfo } from '../types';
+import { QRScanner } from './QRScanner';
+import { QRCodePairing } from './QRCodePairing';
 
 interface ConnectionModalProps {
   isOpen: boolean;
@@ -32,6 +34,11 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   const [code, setCode] = useState(config.code);
   const [autoReconnect, setAutoReconnect] = useState(config.autoReconnect);
 
+  const [showScanner, setShowScanner] = useState(false);
+  const [showQRHost, setShowQRHost] = useState(false);
+  const [qrHostIp, setQrHostIp] = useState('');
+  const [qrHostPort, setQrHostPort] = useState(8765);
+
   React.useEffect(() => {
     if (isOpen) {
       setHost(config.host);
@@ -53,14 +60,65 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     });
   };
 
+  const handleScan = (data: any) => {
+    setShowScanner(false);
+    if (data.host) setHost(data.host);
+    if (data.port) setPort(data.port.toString());
+    if (!code) {
+      setTimeout(() => document.getElementById('input-pairing-code')?.focus(), 100);
+    }
+  };
+
+  const fetchLocalHostAndShowQR = () => {
+    const fallbackToShowQR = () => {
+      setQrHostIp(host);
+      setQrHostPort(parseInt(port) || 8765);
+      setShowQRHost(true);
+    };
+
+    try {
+      const ws = new WebSocket(`ws://127.0.0.1:8765`);
+      const timeout = setTimeout(() => {
+        ws.close();
+        fallbackToShowQR();
+      }, 1000);
+
+      ws.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'server_info') {
+            clearTimeout(timeout);
+            setQrHostIp(data.ip);
+            setQrHostPort(data.port);
+            setHost(data.ip);
+            setPort(data.port.toString());
+            setShowQRHost(true);
+            ws.close();
+          }
+        } catch (err) {}
+      };
+      ws.onerror = () => {
+        clearTimeout(timeout);
+        fallbackToShowQR();
+      };
+    } catch (err) {
+      // Catch cross-origin / mixed-content errors in iframe
+      fallbackToShowQR();
+    }
+  };
+
   const isConnected = status === 'connected';
   const isConnecting = status === 'connecting' || status === 'reconnecting';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+      
+      {showScanner && <QRScanner onScan={handleScan} onClose={() => setShowScanner(false)} />}
+      {showQRHost && <QRCodePairing host={qrHostIp} port={qrHostPort} code={code} onClose={() => setShowQRHost(false)} />}
+
       <div 
         id="modal-connection-dialog"
-        className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden text-zinc-100 flex flex-col max-h-[90vh]"
+        className={`w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden text-zinc-100 flex flex-col max-h-[90vh] ${(showScanner || showQRHost) ? 'hidden' : ''}`}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/80 bg-zinc-950/40">
@@ -232,8 +290,34 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
               </div>
             </div>
           ) : (
-            <form onSubmit={handleConnect} className="space-y-3.5">
-              {/* IP Address & Port */}
+            <div className="space-y-4">
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowScanner(true)}
+                  className="w-full py-3.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] text-white font-medium text-sm transition-all flex items-center justify-center gap-2 border border-zinc-700/50"
+                >
+                  <Scan className="w-4 h-4 text-emerald-400" />
+                  <span>Scan QR Code to Pair Phone</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={fetchLocalHostAndShowQR}
+                  className="w-full py-3 px-4 rounded-xl bg-zinc-950 hover:bg-zinc-900 active:scale-[0.98] text-zinc-300 font-medium text-sm transition-all flex items-center justify-center gap-2 border border-zinc-800"
+                >
+                  <QrCode className="w-4 h-4 text-indigo-400" />
+                  <span>I am the Host PC - Show QR</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-4 text-zinc-600">
+                <div className="flex-1 h-px bg-zinc-800" />
+                <span className="text-xs font-semibold uppercase tracking-widest">or enter manually</span>
+                <div className="flex-1 h-px bg-zinc-800" />
+              </div>
+
+              <form onSubmit={handleConnect} className="space-y-3.5">
+                {/* IP Address & Port */}
               <div className="grid grid-cols-3 gap-2.5">
                 <div className="col-span-2 space-y-1.5">
                   <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
@@ -346,6 +430,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                 )}
               </div>
             </form>
+            </div>
           )}
 
           {/* Quick Helper Guide Callout */}

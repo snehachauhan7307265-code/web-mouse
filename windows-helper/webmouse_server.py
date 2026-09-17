@@ -244,6 +244,17 @@ class WebMouseServer:
         client_addr = f"{peer[0]}:{peer[1]}"
         print(f"CONNECTED: Client from {client_addr}")
 
+        # Send immediate server info so a local laptop client can generate a QR code
+        try:
+            await websocket.send(json.dumps({
+                "type": "server_info",
+                "ip": get_local_ip(),
+                "port": self.port,
+                "version": 1
+            }))
+        except Exception as e:
+            print(f"Error sending server_info: {e}")
+
         try:
             async for raw_message in websocket:
                 try:
@@ -628,6 +639,16 @@ class WebMouseServer:
                         upload = self.active_uploads[transfer_id]
                         upload["chunk_index"] = chunk_index + 1
                         await self.send_next_chunk(websocket, transfer_id)
+                        
+                # 23. WebRTC Signaling Relay
+                elif msg_type == "webrtc_signaling":
+                    # Broadcast the signaling message to all other authenticated clients
+                    for client in self.authenticated_clients:
+                        if client != websocket:
+                            try:
+                                await client.send(json.dumps(data))
+                            except Exception as e:
+                                print(f"Error relaying WebRTC signal: {e}")
 
         except websockets.ConnectionClosed:
             pass

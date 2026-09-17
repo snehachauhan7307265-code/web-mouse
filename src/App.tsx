@@ -12,6 +12,7 @@ import { KeyboardTab } from './components/KeyboardTab';
 import { ShareTab } from './components/ShareTab';
 import { MediaTab } from './components/MediaTab';
 import { SettingsTab } from './components/SettingsTab';
+import { ScreenProjectorTab } from './components/ScreenProjectorTab';
 import { ConnectionModal } from './components/ConnectionModal';
 import { WindowsHelperModal } from './components/WindowsHelperModal';
 import { AppSettings, ConnectionConfig, ConnectionStatus, ConnectedDeviceInfo, LogEntry, OutgoingMessage } from './types';
@@ -87,8 +88,8 @@ export default function App() {
     }
   });
 
-  // Tab navigation: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings'
-  const [activeTab, setActiveTab] = useState<'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings'>('home');
+  // Tab navigation: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings' | 'projector'
+  const [activeTab, setActiveTab] = useState<'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings' | 'projector'>('home');
 
   const [pairedDevice, setPairedDevice] = useState<ConnectedDeviceInfo | null>(() => {
     try {
@@ -104,6 +105,7 @@ export default function App() {
   const [deviceInfo, setDeviceInfo] = useState<ConnectedDeviceInfo | null>(null);
   const [latencyMs, setLatencyMs] = useState<number | undefined>(undefined);
   const [lastIncomingMessage, setLastIncomingMessage] = useState<any>(null);
+  const [webrtcMessages, setWebrtcMessages] = useState<any[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isActive, setIsActive] = useState(false);
   const activeTimerRef = useRef<any>(null);
@@ -136,6 +138,15 @@ export default function App() {
     triggerHaptic,
     settings.vibration
   );
+
+  // Auto-switch to projector when an offer is received
+  useEffect(() => {
+    const latest = webrtcMessages[webrtcMessages.length - 1];
+    if (latest?.type === 'webrtc_signaling' && latest.signalType === 'offer') {
+      setActiveTab('projector');
+      showToast('Incoming Screen Projection...');
+    }
+  }, [webrtcMessages, showToast]);
 
   // Save settings to localStorage
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
@@ -209,6 +220,10 @@ export default function App() {
       },
       onIncomingMessage: (msg) => {
         setLastIncomingMessage(msg);
+        
+        if (msg.type === 'webrtc_signaling') {
+          setWebrtcMessages((prev) => [...prev, msg]);
+        }
         
         // Save the token to configuration for persistent pairing
         if (msg.type === 'auth_result' && msg.success && msg.token) {
@@ -284,7 +299,7 @@ export default function App() {
     showToast('Device forgotten');
   };
 
-  const handleTabChange = (tab: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings') => {
+  const handleTabChange = (tab: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings' | 'projector') => {
     triggerHaptic('light', settings.vibration);
     setActiveTab(tab);
   };
@@ -412,6 +427,16 @@ export default function App() {
           <MediaTab
             onSendMessage={handleSendMessage}
             settings={settings}
+          />
+        )}
+
+        {activeTab === 'projector' && (
+          <ScreenProjectorTab
+            onSendMessage={handleSendMessage}
+            webrtcMessages={webrtcMessages}
+            status={status}
+            deviceInfo={deviceInfo}
+            isDark={isDark}
           />
         )}
 
