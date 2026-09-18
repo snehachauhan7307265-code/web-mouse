@@ -139,7 +139,7 @@ export class WebSocketClient {
       };
 
       this.socket.onerror = (_err) => {
-        let errHint = `Connection failed to ${wsUrl}. Verify helper is running on Windows PC and phone is on the same Wi-Fi.`;
+        let errHint = `Phone cannot reach Windows Helper at ${wsUrl}. Check that both devices are on the same Wi-Fi and that Windows Firewall allows WebMouse on the local network.`;
         if (isHttpsOrigin && wsUrl.startsWith('ws://')) {
           errHint += ' (If blocked by browser over HTTPS, allow Insecure Content in site settings or add to Home Screen).';
         }

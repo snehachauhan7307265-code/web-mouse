@@ -25,41 +25,107 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
       },
       (decodedText) => {
         try {
-          // Attempt to parse JSON
-          const data = JSON.parse(decodedText);
-          if (data.type === 'webmouse-pair') {
-            // 1. Validate version
-            if (data.version && data.version > 2) {
-              setError("Unsupported WebMouse QR version. Please update WebMouse.");
-              return;
-            }
-            // 2. Check expiration
-            if (data.expiresAt) {
-              const now = Math.floor(Date.now() / 1000);
-              if (now > data.expiresAt) {
-                setError("This QR code has expired. Click 'Generate New QR' on your laptop.");
-                return;
-              }
-            }
-            // 3. Validate host
-            if (!data.host) {
-              setError("QR Code is missing computer IP address.");
-              return;
-            }
+          let pairData: any = null;
 
-            if (isScanning) {
-              isScanning = false;
-              scanner.stop().then(() => {
-                if (isMounted) onScan(data);
-              }).catch(console.error);
-            } else {
-              if (isMounted) onScan(data);
+          // Check if QR contains an HTTP pairing URL (e.g. http://192.168.1.5:8765/pair?token=...)
+          if (decodedText.startsWith('http://') || decodedText.startsWith('https://')) {
+            try {
+              const url = new URL(decodedText);
+              if (url.pathname.includes('pair')) {
+                const token = url.searchParams.get('token');
+                const exp = url.searchParams.get('exp');
+                const typeParam = url.searchParams.get('type');
+                const verParam = url.searchParams.get('v');
+                
+                if (token) {
+                  pairData = {
+                    type: typeParam || 'webmouse-pair',
+                    version: verParam ? parseInt(verParam, 10) : 2,
+                    host: url.hostname,
+                    port: parseInt(url.port, 10) || 8765,
+                    token: token,
+                    expiresAt: exp ? parseInt(exp, 10) : undefined
+                  };
+                }
+              }
+            } catch (urlErr) {
+              console.warn("Failed to parse QR as URL", urlErr);
             }
-          } else {
+          }
+
+          // If not URL, parse as JSON payload
+          if (!pairData) {
+            try {
+              const parsed = JSON.parse(decodedText);
+              if (parsed && typeof parsed === 'object') {
+                pairData = parsed;
+              }
+            } catch (jsonErr) {
+              // Not JSON
+            }
+          }
+
+          if (!pairData) {
+            setError("Invalid QR Code: Not a valid WebMouse pairing code.");
+            return;
+          }
+
+          // 1. Validate type
+          if (pairData.type && pairData.type !== 'webmouse-pair') {
             setError("Invalid QR Code: Not a WebMouse pairing code.");
+            return;
+          }
+
+          // 2. Validate version
+          if (pairData.version && pairData.version > 2) {
+            setError("Unsupported WebMouse QR version. Please update WebMouse.");
+            return;
+          }
+
+          // 3. Check expiration
+          if (pairData.expiresAt) {
+            const now = Math.floor(Date.now() / 1000);
+            if (now > pairData.expiresAt) {
+              setError("This QR code has expired. Click 'Generate New QR' on your laptop.");
+              return;
+            }
+          }
+
+          // 4. Validate host
+          if (!pairData.host) {
+            setError("QR Code is missing computer IP address.");
+            return;
+          }
+
+          const hostLower = String(pairData.host).toLowerCase().trim();
+          if (
+            hostLower === 'localhost' ||
+            hostLower === '127.0.0.1' ||
+            hostLower.startsWith('127.') ||
+            hostLower.includes('.run.app') ||
+            hostLower.includes('.vercel.app') ||
+            hostLower.includes('google')
+          ) {
+            setError("Invalid host in QR: Cannot connect to localhost or cloud preview from phone. Start the Windows Helper on your laptop to generate a local Wi-Fi QR.");
+            return;
+          }
+
+          // 5. Validate token
+          if (!pairData.token) {
+            setError("QR Code is missing security token.");
+            return;
+          }
+
+          if (isScanning) {
+            isScanning = false;
+            scanner.stop().then(() => {
+              if (isMounted) onScan(pairData);
+            }).catch(console.error);
+          } else {
+            if (isMounted) onScan(pairData);
           }
         } catch (e) {
-          setError("Invalid QR Code format.");
+          setError("Failed to process QR Code.");
         }
       },
       (err) => {

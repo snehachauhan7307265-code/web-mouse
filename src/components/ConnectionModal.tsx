@@ -36,10 +36,12 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
   const [showScanner, setShowScanner] = useState(false);
   const [showQRHost, setShowQRHost] = useState(false);
+  const [helperStatus, setHelperStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
   const [qrHostIp, setQrHostIp] = useState('');
   const [qrHostPort, setQrHostPort] = useState(8765);
   const [qrToken, setQrToken] = useState<string | undefined>();
   const [qrExpiresAt, setQrExpiresAt] = useState<number | undefined>();
+  const [helperError, setHelperError] = useState<string | undefined>();
   const [showManual, setShowManual] = useState(false);
 
   React.useEffect(() => {
@@ -87,47 +89,139 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   };
 
   const fetchLocalHostAndShowQR = () => {
-    const fallbackToShowQR = () => {
-      const fallbackHost = host || (typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1');
-      setQrHostIp(fallbackHost);
-      setQrHostPort(parseInt(port, 10) || 8765);
-      const clientToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-      setQrToken(clientToken);
-      setQrExpiresAt(Math.floor(Date.now() / 1000) + 60);
-      setShowQRHost(true);
+    setShowQRHost(true);
+    setHelperStatus('checking');
+    setHelperError(undefined);
+
+    const isCloudPreview = typeof window !== 'undefined' && (
+      window.location.protocol === 'https:' ||
+      window.location.hostname.includes('.run.app') ||
+      window.location.hostname.includes('.vercel.app')
+    );
+
+    let activeWs: WebSocket | null = null;
+    let completed = false;
+
+    const handleSuccess = (detectedIp: string, portNum: number, tokenVal: string, expiresAt?: number) => {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timeout);
+      try { activeWs?.close(); } catch (e) {}
+
+      setHelperStatus('connected');
+      setQrHostIp(detectedIp);
+      setQrHostPort(portNum);
+      setQrToken(tokenVal);
+      setQrExpiresAt(expiresAt);
+      setHost(detectedIp);
+      setPort(portNum.toString());
     };
 
-    try {
-      const targetHost = (host && host !== 'localhost') ? host : '127.0.0.1';
-      const ws = new WebSocket(`ws://${targetHost}:${port || 8765}`);
-      const timeout = setTimeout(() => {
-        try { ws.close(); } catch (e) {}
-        fallbackToShowQR();
-      }, 1200);
+    const handleFail = () => {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timeout);
+      try { activeWs?.close(); } catch (e) {}
 
-      ws.onmessage = (e) => {
+      setHelperStatus('disconnected');
+      if (isCloudPreview) {
+        setHelperError('QR pairing must be started from the WebMouse app running locally on this laptop.');
+      } else {
+        setHelperError('Start the WebMouse Windows Helper and try again.');
+      }
+    };
+
+    const timeout = setTimeout(() => {
+      if (!completed) {
+        handleFail();
+      }
+    }, 3000);
+
+    // 1. Try Fast Local HTTP API Gateway (handles port 8765 directly)
+    const tryHttp = async () => {
+      const endpoints = [
+        'http://127.0.0.1:8765/api/pairing-info',
+        'http://localhost:8765/api/pairing-info'
+      ];
+      for (const ep of endpoints) {
+        if (completed) return;
         try {
-          const data = JSON.parse(e.data);
-          if (data.type === 'server_info') {
-            clearTimeout(timeout);
-            setQrHostIp(data.ip);
-            setQrHostPort(data.port);
-            setQrToken(data.token);
-            setQrExpiresAt(data.expiresAt);
-            setHost(data.ip);
-            setPort(data.port.toString());
-            setShowQRHost(true);
-            ws.close();
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 1200);
+          const res = await fetch(ep, { signal: controller.signal, mode: 'cors' });
+          clearTimeout(timer);
+          if (res.ok) {
+            const data = await res.json();
+            const detectedIp = (data.host || data.ip || '').trim();
+            const portNum = parseInt(data.port, 10) || 8765;
+            const tokenVal = data.token || data.pairingToken;
+
+            if (
+              detectedIp &&
+              detectedIp !== 'localhost' &&
+              detectedIp !== '127.0.0.1' &&
+              !detectedIp.startsWith('127.') &&
+              tokenVal
+            ) {
+              handleSuccess(detectedIp, portNum, tokenVal, data.expiresAt);
+              return;
+            }
           }
-        } catch (err) {}
-      };
-      ws.onerror = () => {
-        clearTimeout(timeout);
-        fallbackToShowQR();
-      };
-    } catch (err) {
-      fallbackToShowQR();
-    }
+        } catch (e) {}
+      }
+    };
+    tryHttp();
+
+    // 2. Try WebSocket Gateway
+    const trySocket = (url: string, onFail: () => void) => {
+      if (completed) return;
+      try {
+        const ws = new WebSocket(url);
+        activeWs = ws;
+
+        ws.onopen = () => {
+          ws.send(JSON.stringify({ type: 'host_pairing_info' }));
+        };
+
+        ws.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.type === 'host_pairing_info' || data.type === 'server_info') {
+              const detectedIp = (data.host || data.ip || '').trim();
+              const portNum = parseInt(data.port, 10) || 8765;
+              const tokenVal = data.pairingToken || data.token;
+
+              if (
+                detectedIp &&
+                detectedIp !== 'localhost' &&
+                detectedIp !== '127.0.0.1' &&
+                !detectedIp.startsWith('127.') &&
+                !detectedIp.includes('.run.app') &&
+                !detectedIp.includes('.vercel.app') &&
+                tokenVal
+              ) {
+                handleSuccess(detectedIp, portNum, tokenVal, data.expiresAt);
+              }
+            }
+          } catch (err) {}
+        };
+
+        ws.onerror = () => {
+          if (!completed) onFail();
+        };
+      } catch (err) {
+        if (!completed) onFail();
+      }
+    };
+
+    trySocket('ws://127.0.0.1:8765', () => {
+      trySocket('ws://localhost:8765', () => {
+        // If HTTP also failed or is blocked by browser mixed-content
+        setTimeout(() => {
+          if (!completed) handleFail();
+        }, 1200);
+      });
+    });
   };
 
   const isConnected = status === 'connected';
@@ -141,10 +235,12 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       {showScanner && <QRScanner onScan={handleScan} onClose={() => setShowScanner(false)} />}
       {showQRHost && (
         <QRCodePairing 
+          helperStatus={helperStatus}
           host={qrHostIp} 
           port={qrHostPort} 
           token={qrToken} 
           expiresAt={qrExpiresAt} 
+          errorMessage={helperError}
           onRefresh={fetchLocalHostAndShowQR}
           onClose={() => setShowQRHost(false)} 
         />
