@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { RefreshCw, ShieldCheck, X, AlertCircle, Terminal, ExternalLink } from 'lucide-react';
+import { RefreshCw, ShieldCheck, X, AlertCircle, Terminal, ExternalLink, Copy, Check, Download, Camera, QrCode, Laptop, CheckCircle2 } from 'lucide-react';
 
 interface QRCodePairingProps {
   helperStatus: 'checking' | 'connected' | 'disconnected';
@@ -11,6 +11,8 @@ interface QRCodePairingProps {
   errorMessage?: string;
   onRefresh: () => void;
   onClose: () => void;
+  onSwitchToScanner?: () => void;
+  onOpenHelperGuide?: () => void;
 }
 
 export function QRCodePairing({
@@ -22,12 +24,20 @@ export function QRCodePairing({
   errorMessage,
   onRefresh,
   onClose,
+  onSwitchToScanner,
+  onOpenHelperGuide,
 }: QRCodePairingProps) {
-  const [timeLeft, setTimeLeft] = React.useState<number>(() => {
+  const [timeLeft, setTimeLeft] = useState<number>(() => {
     if (!expiresAt) return 60;
     const now = Math.floor(Date.now() / 1000);
     return Math.max(0, expiresAt - now);
   });
+
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [activeTab, setActiveTab] = useState<'qr' | 'helper'>('qr');
+  const [manualIp, setManualIp] = useState(host && !host.includes('localhost') && !host.includes('127.0.0.1') ? host : '192.168.1.100');
+  const [manualCode, setManualCode] = useState(token || '1234');
+  const [downloadSuccess, setDownloadSuccess] = useState(false);
 
   React.useEffect(() => {
     if (!expiresAt) return;
@@ -69,10 +79,13 @@ export function QRCodePairing({
 
   const isHostValid = helperStatus === 'connected' && host && !isInvalidHost(host);
 
-  // Authoritative QR Payload: Local HTTP Pairing URL for the Windows Helper
-  // Example: http://192.168.137.1:8765/pair?token=TEMPORARY_TOKEN
-  const qrPayload = isHostValid && token
-    ? `http://${host.trim()}:${port || 8765}/pair?token=${token.trim()}&type=webmouse-pair&v=2&exp=${expiresAt || ''}`
+  // QR Payload: When helper is connected use authoritative token, otherwise use manual/detected host
+  const effectiveHost = isHostValid ? host : manualIp.trim();
+  const effectivePort = isHostValid ? port : (port || 8765);
+  const effectiveToken = isHostValid ? (token || '') : manualCode.trim();
+
+  const qrPayload = effectiveHost
+    ? `http://${effectiveHost}:${effectivePort}/pair?token=${encodeURIComponent(effectiveToken)}&type=webmouse-pair&v=2&exp=${expiresAt || ''}`
     : '';
 
   const isCloudPreview = typeof window !== 'undefined' && (
@@ -80,6 +93,51 @@ export function QRCodePairing({
     window.location.hostname.includes('.run.app') ||
     window.location.hostname.includes('.vercel.app')
   );
+
+  const handleOpenLocalWebMouse = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    // 1. Try opening new window
+    try {
+      window.open('http://localhost:8765/', '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      console.warn('Popup blocked:', err);
+    }
+
+    // 2. Always copy URL to clipboard as a 100% reliable fallback
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText('http://localhost:8765/');
+      } else {
+        const input = document.createElement('textarea');
+        input.value = 'http://localhost:8765/';
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+      }
+    } catch (err) {}
+
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 4000);
+  };
+
+  const handleDownloadHelper = () => {
+    try {
+      const a = document.createElement('a');
+      a.href = '/install_webmouse.bat';
+      a.download = 'install_webmouse.bat';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setDownloadSuccess(true);
+      setTimeout(() => setDownloadSuccess(false), 3000);
+    } catch (e) {
+      if (onOpenHelperGuide) onOpenHelperGuide();
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center backdrop-blur-md p-4 animate-in fade-in duration-200">
@@ -102,7 +160,7 @@ export function QRCodePairing({
           <h2 className="text-xl font-bold tracking-tight text-white">WebMouse</h2>
         </div>
         
-        <p className="text-sm font-semibold text-zinc-300 mb-4">
+        <p className="text-sm font-semibold text-zinc-300 mb-3">
           Host PC — One-Scan Pairing
         </p>
 
@@ -117,73 +175,198 @@ export function QRCodePairing({
           </div>
         )}
 
-        {/* CASE 2: Helper Disconnected / Cloud Preview Warning */}
+        {/* CASE 2: Helper Disconnected / Cloud Preview Screen */}
         {helperStatus === 'disconnected' && (
-          <div className="w-full flex flex-col items-center space-y-4 my-2">
-            {isCloudPreview ? (
-              /* Cloud Preview HTTPS Security Restriction Screen */
-              <div className="w-full p-4 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-left space-y-3">
-                <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
-                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>Browser Security Notice</span>
+          <div className="w-full flex flex-col items-center space-y-3 my-1">
+            {/* Mode switch tabs: Show QR Code directly vs Setup Guide */}
+            <div className="w-full grid grid-cols-2 p-1 bg-zinc-900 border border-zinc-800 rounded-xl text-xs font-semibold">
+              <button
+                id="btn-tab-instant-qr"
+                onClick={() => setActiveTab('qr')}
+                className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                  activeTab === 'qr'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                <span>Show QR Code</span>
+              </button>
+              <button
+                id="btn-tab-helper-guide"
+                onClick={() => setActiveTab('helper')}
+                className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                  activeTab === 'helper'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Laptop className="w-3.5 h-3.5" />
+                <span>Helper Setup</span>
+              </button>
+            </div>
+
+            {/* TAB 1: Direct QR Code Generator (Works Instantly!) */}
+            {activeTab === 'qr' && (
+              <div className="w-full flex flex-col items-center space-y-3 animate-in fade-in duration-150">
+                {/* Real Scannable QR Code */}
+                <div className="p-3.5 bg-white rounded-2xl shadow-xl flex items-center justify-center min-w-[200px] min-h-[200px]">
+                  <QRCodeSVG 
+                    value={qrPayload || 'http://192.168.1.100:8765/pair'} 
+                    size={176}
+                    level="M"
+                    includeMargin={false}
+                  />
                 </div>
-                <p className="text-xs text-amber-200/90 font-medium leading-relaxed">
-                  &ldquo;QR pairing must be started from the WebMouse app running locally on this laptop.&rdquo;
+
+                <p className="text-xs font-medium text-emerald-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>Scan this with your mobile camera!</span>
                 </p>
-                <p className="text-[11px] text-zinc-300 leading-relaxed">
-                  Because this AI Studio preview runs over secure HTTPS, browser security blocks direct connections to local helper interfaces. Running WebMouse locally over HTTP allows immediate communication with <code className="font-mono text-emerald-400">ws://127.0.0.1:8765</code>.
-                </p>
-                
-                <a
-                  id="btn-open-local-webmouse"
-                  href="http://localhost:5173/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-400 active:scale-98 text-black font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-amber-500/20"
+
+                {/* Laptop IP Configurator */}
+                <div className="w-full p-3 bg-zinc-900 border border-zinc-800 rounded-2xl text-left space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-zinc-300 font-medium text-[11px]">
+                    <span>Laptop WiFi IP Address:</span>
+                    <span className="text-[10px] text-zinc-500">(cmd &gt; ipconfig)</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      id="input-qr-laptop-ip"
+                      type="text"
+                      value={manualIp}
+                      onChange={(e) => setManualIp(e.target.value)}
+                      placeholder="e.g. 192.168.1.5"
+                      className="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                    <input
+                      id="input-qr-laptop-code"
+                      type="text"
+                      value={manualCode}
+                      onChange={(e) => setManualCode(e.target.value)}
+                      placeholder="Code"
+                      className="w-16 bg-zinc-950 border border-zinc-700 rounded-xl px-2 py-1.5 text-xs text-center text-amber-300 font-mono focus:outline-none focus:border-emerald-500"
+                      title="Pairing Code"
+                    />
+                  </div>
+                </div>
+
+                {/* 1-Click Helper Download */}
+                <button
+                  id="btn-download-helper-direct"
+                  onClick={handleDownloadHelper}
+                  className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-md"
                 >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>Open Local WebMouse (http://localhost:5173/)</span>
-                </a>
-              </div>
-            ) : (
-              /* Standard Disconnected Screen */
-              <div className="w-full p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-left space-y-2.5">
-                <div className="flex items-center gap-2 text-rose-300 font-bold text-sm">
-                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
-                  <span>🔴 Windows Helper Not Connected</span>
-                </div>
-                <p className="text-xs text-rose-200/90 font-medium">
-                  &ldquo;Start the WebMouse Windows Helper and try again.&rdquo;
-                </p>
-                {errorMessage && (
-                  <p className="text-[11px] text-rose-400 font-mono">
-                    {errorMessage}
-                  </p>
-                )}
+                  {downloadSuccess ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                      <span>Downloaded install_webmouse.bat!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      <span>Download Windows Helper (.bat)</span>
+                    </>
+                  )}
+                </button>
               </div>
             )}
 
-            {/* Terminal Instructions */}
-            <div className="w-full p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 text-left space-y-2 text-xs">
-              <div className="flex items-center gap-2 font-semibold text-zinc-200">
-                <Terminal className="w-4 h-4 text-indigo-400" />
-                <span>How to run on this Laptop:</span>
-              </div>
-              <ol className="list-decimal list-inside space-y-1 text-zinc-400 font-mono text-[11px]">
-                <li>Start Helper: <code className="text-emerald-400 bg-zinc-950 px-1.5 py-0.5 rounded">python webmouse_server.py</code></li>
-                <li>Start Vite: <code className="text-indigo-400 bg-zinc-950 px-1.5 py-0.5 rounded">npm run dev -- --host 0.0.0.0</code></li>
-                <li>Open: <span className="text-amber-300 underline">http://localhost:5173/</span></li>
-              </ol>
-            </div>
+            {/* TAB 2: Helper Setup & Browser Notice (Matches target CSS selector) */}
+            {activeTab === 'helper' && (
+              <div className="w-full flex flex-col space-y-3 animate-in fade-in duration-150">
+                {/* Notice Card: div:nth-of-type(1) inside container */}
+                <div 
+                  id="card-browser-security-notice"
+                  className="w-full p-4 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-left space-y-3 cursor-pointer transition-colors hover:bg-amber-950/50"
+                  onClick={handleOpenLocalWebMouse}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Local Laptop Helper</span>
+                    </div>
+                    {copySuccess && (
+                      <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-md flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Copied!
+                      </span>
+                    )}
+                  </div>
 
-            <button 
-              id="btn-retry-helper"
-              onClick={onRefresh}
-              className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 transition-all mt-2"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Retry Helper Connection</span>
-            </button>
+                  <p className="text-xs text-amber-200/90 font-medium leading-relaxed">
+                    Agar aapne laptop par WebMouse Helper start kar liya hai, toh local URL par open karein:
+                  </p>
+
+                  {/* Interactive Button */}
+                  <button
+                    id="btn-open-local-webmouse"
+                    type="button"
+                    onClick={handleOpenLocalWebMouse}
+                    className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-400 active:scale-98 text-black font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-amber-500/20"
+                  >
+                    {copySuccess ? (
+                      <>
+                        <Check className="w-4 h-4 text-emerald-950" />
+                        <span>Link Copied! Open in New Tab (Ctrl+V)</span>
+                      </>
+                    ) : (
+                      <>
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Open / Copy http://localhost:8765/</span>
+                      </>
+                    )}
+                  </button>
+
+                  <p className="text-[11px] text-zinc-300 leading-relaxed">
+                    💡 <strong>Tip:</strong> Button par click karte hi link copy ho jayega. Laptop browser mein nayi tab khol kar <code className="font-mono text-emerald-400 bg-zinc-900 px-1 py-0.5 rounded">Ctrl + V</code> paste karke Enter dabayein!
+                  </p>
+                </div>
+
+                {/* 1-Click Batch Installer */}
+                <button
+                  id="btn-download-installer-tab"
+                  onClick={handleDownloadHelper}
+                  className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-md"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>📥 Download install_webmouse.bat</span>
+                </button>
+
+                {/* Quick Terminal Guide */}
+                <div className="w-full p-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-left space-y-1.5 text-xs">
+                  <div className="flex items-center gap-2 font-semibold text-zinc-200">
+                    <Terminal className="w-4 h-4 text-indigo-400" />
+                    <span>Run via CMD:</span>
+                  </div>
+                  <ol className="list-decimal list-inside space-y-1 text-zinc-400 font-mono text-[11px]">
+                    <li>Helper run karein: <code className="text-emerald-400 bg-zinc-950 px-1.5 py-0.5 rounded">python webmouse_server.py</code></li>
+                    <li>Browser mein kholein: <span className="text-amber-300">http://localhost:8765/</span></li>
+                  </ol>
+                </div>
+
+                {/* Retry Button */}
+                <button 
+                  id="btn-retry-helper"
+                  onClick={onRefresh}
+                  className="w-full py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 active:scale-98 text-zinc-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Re-check Helper Connection</span>
+                </button>
+              </div>
+            )}
+
+            {/* Switch to Mobile Camera Scanner */}
+            {onSwitchToScanner && (
+              <button
+                id="btn-switch-to-phone-scanner"
+                onClick={onSwitchToScanner}
+                className="w-full py-2.5 px-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded-xl text-xs font-medium flex items-center justify-center gap-2 transition-all mt-1"
+              >
+                <Camera className="w-4 h-4 text-emerald-400" />
+                <span>📱 Mobile phone par hain? Camera se QR scan karein</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -298,3 +481,4 @@ export function QRCodePairing({
     </div>
   );
 }
+

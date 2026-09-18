@@ -1,5 +1,5 @@
 import React from 'react';
-import { MousePointer2, Wifi, WifiOff, RefreshCw, AlertCircle, HelpCircle, Activity } from 'lucide-react';
+import { MousePointer2, Wifi, WifiOff, RefreshCw, AlertCircle, HelpCircle, Activity, Scan } from 'lucide-react';
 import { ConnectionStatus, ConnectedDeviceInfo } from '../types';
 
 interface HeaderProps {
@@ -7,7 +7,7 @@ interface HeaderProps {
   deviceInfo: ConnectedDeviceInfo | null;
   latencyMs?: number;
   isActive?: boolean;
-  onOpenConnectionModal: () => void;
+  onOpenConnectionModal: (view?: 'normal' | 'scanner' | 'qr_host') => void;
   onOpenHelperGuide: () => void;
 }
 
@@ -90,7 +90,19 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right controls */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
+        {status !== 'connected' && (
+          <button
+            id="btn-header-quick-scan"
+            onClick={() => onOpenConnectionModal('scanner')}
+            className="p-1.5 px-2 bg-emerald-600/90 hover:bg-emerald-500 active:scale-95 text-white rounded-lg flex items-center gap-1 text-[11px] font-semibold shadow-sm transition-all"
+            title="Scan Laptop QR Code"
+          >
+            <Scan className="w-3.5 h-3.5 text-emerald-200" />
+            <span className="hidden sm:inline">Scan</span>
+          </button>
+        )}
+
         {/* Helper Guide Button */}
         <button
           id="btn-helper-guide"
@@ -105,7 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Connection Status Button */}
         <button
           id="btn-connection-status"
-          onClick={onOpenConnectionModal}
+          onClick={() => onOpenConnectionModal('normal')}
           className="transition-transform active:scale-95"
           title={
             deviceInfo

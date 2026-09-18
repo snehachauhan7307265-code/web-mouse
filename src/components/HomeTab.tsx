@@ -11,7 +11,9 @@ import {
   Trash2,
   Scan,
   RefreshCw,
-  AlertTriangle
+  AlertTriangle,
+  Camera,
+  QrCode
 } from 'lucide-react';
 import { ConnectionStatus, ConnectedDeviceInfo, LogEntry } from '../types';
 
@@ -25,7 +27,7 @@ interface HomeTabProps {
   onClearLogs: () => void;
   onReconnect: () => void;
   onDisconnect: () => void;
-  onOpenConnectionModal?: () => void;
+  onOpenConnectionModal?: (view?: 'normal' | 'scanner' | 'qr_host') => void;
   onForgetDevice?: () => void;
 }
 
@@ -110,11 +112,11 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           </div>
           <div className="flex items-center gap-2 pt-1">
             <button
-              onClick={onOpenConnectionModal}
+              onClick={() => onOpenConnectionModal?.('scanner')}
               className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all"
             >
               <Scan className="w-3.5 h-3.5 text-emerald-300" />
-              <span>Scan New QR</span>
+              <span>Scan QR</span>
             </button>
             <button
               onClick={onReconnect}
@@ -133,23 +135,47 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           </div>
         </div>
       ) : (
-        <div className="w-full p-5 rounded-3xl bg-gradient-to-br from-indigo-950/40 via-zinc-900 to-indigo-950/30 border border-indigo-500/30 flex flex-col items-center text-center space-y-3 shadow-xl">
+        <div className="w-full p-5 rounded-3xl bg-gradient-to-br from-indigo-950/40 via-zinc-900 to-indigo-950/30 border border-indigo-500/30 flex flex-col items-center text-center space-y-4 shadow-xl">
           <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-2xl border border-emerald-500/20 shadow-inner">
-            <Scan className="w-6 h-6 text-emerald-400" />
+            <Scan className="w-7 h-7 text-emerald-400" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-white">Connect to Laptop</h2>
-            <p className="text-xs text-zinc-400 mt-0.5 max-w-xs">
-              Open WebMouse on your laptop, click &ldquo;Show QR&rdquo;, and scan with your phone.
+            <h2 className="text-lg font-bold text-white tracking-tight">Direct Laptop Connect</h2>
+            <p className="text-xs text-zinc-400 mt-1 max-w-xs leading-relaxed">
+              Connect your phone to your laptop in 1 second using the QR code. No IP or code entry needed.
             </p>
           </div>
-          <button
-            onClick={onOpenConnectionModal}
-            className="w-full max-w-xs py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 transition-all"
-          >
-            <Scan className="w-4 h-4" />
-            <span>Scan QR Code to Pair</span>
-          </button>
+
+          <div className="w-full max-w-xs space-y-2.5 pt-1">
+            {/* 1. Phone Camera Scan */}
+            <button
+              id="btn-scan-qr-phone"
+              onClick={() => onOpenConnectionModal?.('scanner')}
+              className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-semibold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/25 transition-all"
+            >
+              <Camera className="w-5 h-5 text-emerald-100" />
+              <span>📱 Scan Laptop QR (Phone)</span>
+            </button>
+
+            {/* 2. Laptop Screen Show QR */}
+            <button
+              id="btn-show-qr-laptop"
+              onClick={() => onOpenConnectionModal?.('qr_host')}
+              className="w-full py-3 px-4 rounded-2xl bg-zinc-800 hover:bg-zinc-700/80 active:scale-[0.98] border border-zinc-700/80 text-zinc-200 font-medium text-xs flex items-center justify-center gap-2 transition-all shadow-sm"
+            >
+              <QrCode className="w-4 h-4 text-indigo-400" />
+              <span>💻 Show QR Code (Laptop)</span>
+            </button>
+
+            {/* 3. Manual IP link */}
+            <button
+              id="btn-manual-ip-settings"
+              onClick={() => onOpenConnectionModal?.('normal')}
+              className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors underline pt-1 block mx-auto"
+            >
+              Manual IP & Advanced Connection
+            </button>
+          </div>
         </div>
       )}
 

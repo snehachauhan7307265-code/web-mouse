@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MousePointer, Keyboard as KeyboardIcon, Scroll, Settings as SettingsIcon, AlertCircle, Wifi, Share2, MonitorPlay } from 'lucide-react';
+import { MousePointer, Keyboard as KeyboardIcon, Scroll, Settings as SettingsIcon, AlertCircle, Wifi, Share2, MonitorPlay, Scan } from 'lucide-react';
 import { Header } from './components/Header';
 import { HomeTab } from './components/HomeTab';
 import { Touchpad } from './components/Touchpad';
@@ -112,7 +112,13 @@ export default function App() {
 
   // Modals
   const [isConnectionModalOpen, setIsConnectionModalOpen] = useState(false);
+  const [connectionModalView, setConnectionModalView] = useState<'normal' | 'scanner' | 'qr_host'>('normal');
   const [isHelperGuideOpen, setIsHelperGuideOpen] = useState(false);
+
+  const openConnectionModal = (view: 'normal' | 'scanner' | 'qr_host' = 'normal') => {
+    setConnectionModalView(view);
+    setIsConnectionModalOpen(true);
+  };
 
   // Toast notifications
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -181,7 +187,8 @@ export default function App() {
         setStatus(newStatus);
         if (newStatus === 'connected') {
           triggerHaptic('double', settings.vibration);
-          showToast('Connected to Windows PC');
+          showToast('🟢 Connected to Windows PC');
+          setActiveTab('mouse');
         } else if (newStatus === 'auth_failed' || newStatus === 'error') {
           triggerHaptic('error', settings.vibration);
           if (newStatus === 'error') showToast('Connection lost');
@@ -350,7 +357,7 @@ export default function App() {
         deviceInfo={deviceInfo}
         latencyMs={latencyMs}
         isActive={isActive}
-        onOpenConnectionModal={() => setIsConnectionModalOpen(true)}
+        onOpenConnectionModal={(view) => openConnectionModal(view || 'normal')}
         onOpenHelperGuide={() => setIsHelperGuideOpen(true)}
       />
 
@@ -359,14 +366,15 @@ export default function App() {
         <div className="bg-gradient-to-r from-indigo-950/70 via-zinc-900/90 to-indigo-950/70 border-b border-indigo-500/20 px-4 py-2 flex items-center justify-between text-xs text-indigo-200 shrink-0">
           <div className="flex items-center gap-2 truncate">
             <Wifi className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-            <span className="truncate">Not connected to Windows PC</span>
+            <span className="truncate">Scan QR to connect laptop</span>
           </div>
           <button
             id="btn-quick-connect-banner"
-            onClick={() => setIsConnectionModalOpen(true)}
-            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold text-[11px] shrink-0 active:scale-95 transition-all shadow-sm"
+            onClick={() => openConnectionModal('scanner')}
+            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold text-[11px] shrink-0 active:scale-95 transition-all shadow-sm flex items-center gap-1.5"
           >
-            Connect
+            <Scan className="w-3.5 h-3.5 text-emerald-100" />
+            <span>Scan QR</span>
           </button>
         </div>
       )}
@@ -420,7 +428,7 @@ export default function App() {
               }
             }}
             onDisconnect={handleDisconnect}
-            onOpenConnectionModal={() => setIsConnectionModalOpen(true)}
+            onOpenConnectionModal={(view) => openConnectionModal(view || 'normal')}
             onForgetDevice={handleForgetDevice}
           />
         )}
@@ -603,6 +611,7 @@ export default function App() {
       <ConnectionModal
         isOpen={isConnectionModalOpen}
         onClose={() => setIsConnectionModalOpen(false)}
+        initialView={connectionModalView}
         config={config}
         status={status}
         deviceInfo={deviceInfo}

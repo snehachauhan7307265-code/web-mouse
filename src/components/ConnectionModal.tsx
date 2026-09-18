@@ -15,6 +15,7 @@ interface ConnectionModalProps {
   onDisconnect: () => void;
   onForgetDevice: () => void;
   onOpenHelperGuide: () => void;
+  initialView?: 'normal' | 'scanner' | 'qr_host';
 }
 
 export const ConnectionModal: React.FC<ConnectionModalProps> = ({
@@ -28,6 +29,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   onDisconnect,
   onForgetDevice,
   onOpenHelperGuide,
+  initialView = 'normal',
 }) => {
   const [host, setHost] = useState(config.host);
   const [port, setPort] = useState(config.port.toString());
@@ -50,8 +52,18 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       setPort(config.port.toString());
       setCode(config.code);
       setAutoReconnect(config.autoReconnect);
+
+      if (initialView === 'scanner') {
+        setShowScanner(true);
+        setShowQRHost(false);
+      } else if (initialView === 'qr_host') {
+        fetchLocalHostAndShowQR();
+      } else {
+        setShowScanner(false);
+        setShowQRHost(false);
+      }
     }
-  }, [isOpen, config.host, config.port, config.code, config.autoReconnect]);
+  }, [isOpen, initialView, config.host, config.port, config.code, config.autoReconnect]);
 
   if (!isOpen) return null;
 
@@ -83,6 +95,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         lastComputerName: 'My Laptop',
         autoReconnect: true, // Always auto-reconnect on successful scan
       });
+      onClose();
     } else if (!code) {
       setTimeout(() => document.getElementById('input-pairing-code')?.focus(), 100);
     }
@@ -232,17 +245,33 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       
-      {showScanner && <QRScanner onScan={handleScan} onClose={() => setShowScanner(false)} />}
+      {showScanner && (
+        <QRScanner
+          onScan={handleScan}
+          onClose={() => {
+            setShowScanner(false);
+            if (initialView === 'scanner') onClose();
+          }}
+        />
+      )}
       {showQRHost && (
         <QRCodePairing 
           helperStatus={helperStatus}
-          host={qrHostIp} 
-          port={qrHostPort} 
-          token={qrToken} 
+          host={qrHostIp || config.host || ''} 
+          port={qrHostPort || config.port || 8765} 
+          token={qrToken || config.code || ''} 
           expiresAt={qrExpiresAt} 
           errorMessage={helperError}
           onRefresh={fetchLocalHostAndShowQR}
-          onClose={() => setShowQRHost(false)} 
+          onClose={() => {
+            setShowQRHost(false);
+            if (initialView === 'qr_host') onClose();
+          }} 
+          onSwitchToScanner={() => {
+            setShowQRHost(false);
+            setShowScanner(true);
+          }}
+          onOpenHelperGuide={onOpenHelperGuide}
         />
       )}
 
