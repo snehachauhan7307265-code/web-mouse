@@ -28,21 +28,44 @@ export function ScreenProjectorTab({
   const processedIndexRef = useRef(0);
   const iceCandidateQueueRef = useRef<RTCIceCandidateInit[]>([]);
 
-  // Stop everything
+  // Stop everything safely
   const stopProjection = useCallback(() => {
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current.getTracks().forEach(track => {
+        try {
+          track.stop();
+        } catch (e) {}
+      });
       localStreamRef.current = null;
     }
     if (pcRef.current) {
-      pcRef.current.close();
+      try {
+        pcRef.current.close();
+      } catch (e) {}
       pcRef.current = null;
     }
     iceCandidateQueueRef.current = [];
-    if (localVideoRef.current) localVideoRef.current.srcObject = null;
-    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+    if (localVideoRef.current) {
+      try {
+        localVideoRef.current.pause();
+      } catch (e) {}
+      localVideoRef.current.srcObject = null;
+    }
+    if (remoteVideoRef.current) {
+      try {
+        remoteVideoRef.current.pause();
+      } catch (e) {}
+      remoteVideoRef.current.srcObject = null;
+    }
     setProjectorState('ready');
   }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopProjection();
+    };
+  }, [stopProjection]);
 
   // Handle incoming signaling queue
   useEffect(() => {

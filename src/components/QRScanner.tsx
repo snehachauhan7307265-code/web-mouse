@@ -10,14 +10,71 @@ interface QRScannerProps {
 export function QRScanner({ onScan, onClose }: QRScannerProps) {
   const [error, setError] = useState<string | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const isStoppingRef = useRef(false);
+  const startPromiseRef = useRef<Promise<null> | null>(null);
+
+  const pauseAndDetachVideo = () => {
+    try {
+      const video = document.querySelector('#qr-reader video') as HTMLVideoElement | null;
+      if (video) {
+        try {
+          video.pause();
+        } catch (e) {}
+        if (video.srcObject) {
+          const stream = video.srcObject as MediaStream;
+          stream.getTracks().forEach((t) => {
+            try { t.stop(); } catch (e) {}
+          });
+          video.srcObject = null;
+        }
+      }
+    } catch (e) {}
+  };
+
+  const safelyStopScanner = async () => {
+    if (isStoppingRef.current) return;
+    isStoppingRef.current = true;
+    pauseAndDetachVideo();
+
+    if (startPromiseRef.current) {
+      try {
+        await startPromiseRef.current;
+      } catch (e) {}
+    }
+
+    if (scannerRef.current) {
+      try {
+        if (scannerRef.current.isScanning) {
+          await scannerRef.current.stop();
+        }
+      } catch (e) {}
+
+      try {
+        scannerRef.current.clear();
+      } catch (e) {}
+      scannerRef.current = null;
+    }
+  };
+
+  const handleClose = async () => {
+    await safelyStopScanner();
+    onClose();
+  };
 
   useEffect(() => {
     let isMounted = true;
-    let isScanning = false;
-    const scanner = new Html5Qrcode("qr-reader");
-    scannerRef.current = scanner;
+    isStoppingRef.current = false;
 
-    scanner.start(
+    let scanner: Html5Qrcode;
+    try {
+      scanner = new Html5Qrcode("qr-reader");
+      scannerRef.current = scanner;
+    } catch (e) {
+      console.warn("Failed to initialize Html5Qrcode", e);
+      return;
+    }
+
+    const startPromise = scanner.start(
       { facingMode: "environment" },
       {
         fps: 10,
@@ -116,23 +173,24 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
             return;
           }
 
-          if (isScanning) {
-            isScanning = false;
-            scanner.stop().then(() => {
-              if (isMounted) onScan(pairData);
-            }).catch(console.error);
-          } else {
+          safelyStopScanner().finally(() => {
             if (isMounted) onScan(pairData);
-          }
+          });
         } catch (e) {
           setError("Failed to process QR Code.");
         }
       },
-      (err) => {
+      () => {
         // Ignore normal scanning errors (no code found)
       }
-    ).then(() => {
-      isScanning = true;
+    );
+
+    startPromiseRef.current = startPromise;
+
+    startPromise.then(() => {
+      if (!isMounted || isStoppingRef.current) {
+        safelyStopScanner();
+      }
     }).catch((err) => {
       if (!isMounted) return;
       if (err?.name === 'NotAllowedError' || err?.message?.includes('Permission denied') || err?.message?.includes('NotAllowedError')) {
@@ -140,17 +198,12 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
       } else {
         setError("Failed to start camera. Please ensure camera permissions are granted.");
       }
-      console.error(err);
+      console.warn("Camera start error:", err);
     });
 
     return () => {
       isMounted = false;
-      if (scannerRef.current && isScanning) {
-        isScanning = false;
-        try {
-          scannerRef.current.stop().catch(() => {});
-        } catch (e) {}
-      }
+      safelyStopScanner();
     };
   }, [onScan]);
 
@@ -162,7 +215,11 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
             <Camera className="w-5 h-5 text-indigo-400" />
             Scan QR Code
           </div>
-          <button onClick={onClose} className="p-2 bg-zinc-900 rounded-full text-zinc-400 hover:text-white">
+          <button 
+            id="btn-close-qr-scanner"
+            onClick={handleClose} 
+            className="p-2 bg-zinc-900 rounded-full text-zinc-400 hover:text-white transition-colors"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Copy, Check, Download, Terminal, ShieldAlert, Wifi, Info, Monitor, FileCode, CheckCircle2 } from 'lucide-react';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface WindowsHelperModalProps {
   isOpen: boolean;
@@ -214,8 +215,8 @@ export const WindowsHelperModal: React.FC<WindowsHelperModalProps> = ({ isOpen, 
 
   if (!isOpen) return null;
 
-  const handleCopy = (text: string, type: 'server' | 'reqs') => {
-    navigator.clipboard.writeText(text);
+  const handleCopy = async (text: string, type: 'server' | 'reqs') => {
+    await copyToClipboard(text);
     if (type === 'server') {
       setCopiedServer(true);
       setTimeout(() => setCopiedServer(false), 2000);

@@ -18,6 +18,7 @@ import { WindowsHelperModal } from './components/WindowsHelperModal';
 import { AppSettings, ConnectionConfig, ConnectionStatus, ConnectedDeviceInfo, LogEntry, OutgoingMessage } from './types';
 import { WebSocketClient, triggerHaptic } from './services/websocketService';
 import { useFileTransfer } from './hooks/useFileTransfer';
+import { copyToClipboard } from './utils/clipboard';
 
 const DEFAULT_SETTINGS: AppSettings = {
   deviceName: 'WebMouse Phone',
@@ -216,13 +217,12 @@ export default function App() {
       onNotification: (msg) => {
         showToast(msg);
       },
-      onClipboardData: (text) => {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(() => {
-            showToast('PC Clipboard copied to phone!');
-          }).catch(() => {
-            showToast('Received clipboard, but phone denied paste permission.');
-          });
+      onClipboardData: async (text) => {
+        const copied = await copyToClipboard(text);
+        if (copied) {
+          showToast('PC Clipboard copied to phone!');
+        } else {
+          showToast('Received clipboard, but phone denied paste permission.');
         }
       },
       onIncomingMessage: (msg) => {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { RefreshCw, ShieldCheck, X, AlertCircle, Terminal, ExternalLink, Copy, Check, Download, Camera, QrCode, Laptop, CheckCircle2 } from 'lucide-react';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface QRCodePairingProps {
   helperStatus: 'checking' | 'connected' | 'disconnected';
@@ -94,7 +95,7 @@ export function QRCodePairing({
     window.location.hostname.includes('.vercel.app')
   );
 
-  const handleOpenLocalWebMouse = (e?: React.MouseEvent) => {
+  const handleOpenLocalWebMouse = async (e?: React.MouseEvent) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
@@ -106,22 +107,12 @@ export function QRCodePairing({
       console.warn('Popup blocked:', err);
     }
 
-    // 2. Always copy URL to clipboard as a 100% reliable fallback
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText('http://localhost:8765/');
-      } else {
-        const input = document.createElement('textarea');
-        input.value = 'http://localhost:8765/';
-        document.body.appendChild(input);
-        input.select();
-        document.execCommand('copy');
-        document.body.removeChild(input);
-      }
-    } catch (err) {}
-
-    setCopySuccess(true);
-    setTimeout(() => setCopySuccess(false), 4000);
+    // 2. Safe clipboard copy with fallback
+    const copied = await copyToClipboard('http://localhost:8765/');
+    if (copied) {
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 4000);
+    }
   };
 
   const handleDownloadHelper = () => {
