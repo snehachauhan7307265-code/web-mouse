@@ -11,6 +11,7 @@ export interface ConnectionConfig {
   port: number;
   code: string;
   token?: string;
+  qrToken?: string;
   lastComputerName?: string;
   autoReconnect: boolean;
 }

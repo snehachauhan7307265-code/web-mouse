@@ -38,6 +38,9 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   const [showQRHost, setShowQRHost] = useState(false);
   const [qrHostIp, setQrHostIp] = useState('');
   const [qrHostPort, setQrHostPort] = useState(8765);
+  const [qrToken, setQrToken] = useState<string | undefined>();
+  const [qrExpiresAt, setQrExpiresAt] = useState<number | undefined>();
+  const [showManual, setShowManual] = useState(false);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -56,6 +59,8 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       host: host.trim(),
       port: parseInt(port, 10) || 8765,
       code: code.trim(),
+      token: config.token,
+      lastComputerName: config.lastComputerName,
       autoReconnect,
     });
   };
@@ -64,24 +69,41 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     setShowScanner(false);
     if (data.host) setHost(data.host);
     if (data.port) setPort(data.port.toString());
-    if (!code) {
+    
+    if (data.token) {
+      // Auto-connect with one-time token from QR
+      onSaveAndConnect({
+        host: data.host,
+        port: parseInt(data.port, 10) || 8765,
+        code: '', // Not needed for QR
+        qrToken: data.token,
+        token: undefined, // Clear old token until server grants new permanent token
+        lastComputerName: 'My Laptop',
+        autoReconnect: true, // Always auto-reconnect on successful scan
+      });
+    } else if (!code) {
       setTimeout(() => document.getElementById('input-pairing-code')?.focus(), 100);
     }
   };
 
   const fetchLocalHostAndShowQR = () => {
     const fallbackToShowQR = () => {
-      setQrHostIp(host);
-      setQrHostPort(parseInt(port) || 8765);
+      const fallbackHost = host || (typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1');
+      setQrHostIp(fallbackHost);
+      setQrHostPort(parseInt(port, 10) || 8765);
+      const clientToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      setQrToken(clientToken);
+      setQrExpiresAt(Math.floor(Date.now() / 1000) + 60);
       setShowQRHost(true);
     };
 
     try {
-      const ws = new WebSocket(`ws://127.0.0.1:8765`);
+      const targetHost = (host && host !== 'localhost') ? host : '127.0.0.1';
+      const ws = new WebSocket(`ws://${targetHost}:${port || 8765}`);
       const timeout = setTimeout(() => {
-        ws.close();
+        try { ws.close(); } catch (e) {}
         fallbackToShowQR();
-      }, 1000);
+      }, 1200);
 
       ws.onmessage = (e) => {
         try {
@@ -90,6 +112,8 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             clearTimeout(timeout);
             setQrHostIp(data.ip);
             setQrHostPort(data.port);
+            setQrToken(data.token);
+            setQrExpiresAt(data.expiresAt);
             setHost(data.ip);
             setPort(data.port.toString());
             setShowQRHost(true);
@@ -102,19 +126,29 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         fallbackToShowQR();
       };
     } catch (err) {
-      // Catch cross-origin / mixed-content errors in iframe
       fallbackToShowQR();
     }
   };
 
   const isConnected = status === 'connected';
   const isConnecting = status === 'connecting' || status === 'reconnecting';
+  const hasTrustedDevice = Boolean(config.token);
+  const computerDisplayName = config.lastComputerName || pairedDevice?.computerName || 'My Laptop';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       
       {showScanner && <QRScanner onScan={handleScan} onClose={() => setShowScanner(false)} />}
-      {showQRHost && <QRCodePairing host={qrHostIp} port={qrHostPort} code={code} onClose={() => setShowQRHost(false)} />}
+      {showQRHost && (
+        <QRCodePairing 
+          host={qrHostIp} 
+          port={qrHostPort} 
+          token={qrToken} 
+          expiresAt={qrExpiresAt} 
+          onRefresh={fetchLocalHostAndShowQR}
+          onClose={() => setShowQRHost(false)} 
+        />
+      )}
 
       <div 
         id="modal-connection-dialog"
@@ -128,7 +162,9 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-semibold leading-tight">Connection Area</h2>
-              <p className="text-xs text-zinc-400">Connect to Windows Local Helper</p>
+              <p className="text-xs text-zinc-400">
+                {hasTrustedDevice ? 'Paired Trusted Device' : 'Connect to Windows Local Helper'}
+              </p>
             </div>
           </div>
           <button
@@ -142,97 +178,92 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
         {/* Content */}
         <div className="p-5 space-y-4 overflow-y-auto">
-          {/* Active Status Display */}
-          <div className={`p-3.5 rounded-xl border flex items-center justify-between ${
-            isConnected
-              ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
-              : isConnecting
-              ? 'bg-amber-950/30 border-amber-500/30 text-amber-300'
-              : status === 'auth_failed'
-              ? 'bg-rose-950/30 border-rose-500/30 text-rose-300'
-              : 'bg-zinc-800/40 border-zinc-700/50 text-zinc-300'
-          }`}>
-            <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full shrink-0 ${
-                isConnected
-                  ? 'bg-emerald-400 animate-pulse'
-                  : isConnecting
-                  ? 'bg-amber-400 animate-ping'
-                  : status === 'auth_failed'
-                  ? 'bg-rose-400'
-                  : 'bg-zinc-500'
-              }`} />
-              <div>
-                <p className="text-xs uppercase font-bold tracking-wider opacity-80">Connection Status</p>
-                <p className="text-sm font-semibold capitalize">
-                  {status === 'auth_failed' ? 'Pairing Code Rejected' : status}
-                </p>
-              </div>
-            </div>
-
-            {deviceInfo && (
-              <div className="text-right">
-                <p className="text-xs text-zinc-400">Computer</p>
-                <p className="text-xs font-semibold text-white">{deviceInfo.computerName}</p>
-                {deviceInfo.latencyMs !== undefined && (
-                  <p className="text-[10px] text-emerald-400 font-mono">{deviceInfo.latencyMs} ms</p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Detailed Error Banner if Auth Failed or Connection Error */}
-          {status === 'auth_failed' && (
-            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 flex items-start gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-semibold text-white">Pairing Failed</p>
-                <p className="text-rose-200 mt-0.5">
-                  {deviceInfo?.errorMessage || 'The 6-digit pairing code did not match the code displayed in your Windows terminal.'}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {status === 'error' && (
-            <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/40 text-xs text-amber-300 space-y-2">
-              <div className="flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold text-white">Cannot Reach Windows PC</p>
-                  <p className="text-amber-200 mt-0.5">
-                    Ensure <code className="text-white bg-black/40 px-1 py-0.5 rounded">python webmouse_server.py</code> is running on your PC and both devices are on the same Wi-Fi.
+          {/* Paired Device Section */}
+          {hasTrustedDevice ? (
+            <div className="space-y-4">
+              {/* 1. Connected State */}
+              {isConnected && (
+                <div className="p-6 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 text-center flex flex-col items-center justify-center space-y-2 shadow-inner">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    🟢 Connected
+                  </div>
+                  <h3 className="text-xl font-bold text-white tracking-tight">
+                    {computerDisplayName}
+                  </h3>
+                  <p className="text-xs text-emerald-300 font-medium">WebMouse Ready</p>
+                  <p className="text-[11px] text-zinc-400 font-mono pt-1">
+                    {config.host}:{config.port}
                   </p>
                 </div>
-              </div>
-              {typeof window !== 'undefined' && window.location.protocol === 'https:' && (
-                <div className="pt-2 border-t border-amber-500/20 text-[11px] text-amber-200/90 leading-relaxed">
-                  <span className="font-semibold text-white">HTTPS Deployment Note:</span> Browsers on HTTPS (like Vercel) may restrict unencrypted local WebSocket connections (<code className="text-white bg-black/30 px-1 rounded">ws://</code>). In Chrome, tap the lock/tune icon beside the address bar &rarr; Site settings &rarr; Insecure Content &rarr; Allow, or add WebMouse to your phone's Home Screen.
+              )}
+
+              {/* 2. Reconnecting / Connecting State */}
+              {isConnecting && (
+                <div className="p-5 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-center flex flex-col items-center justify-center space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-semibold">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    🟡 Reconnecting...
+                  </div>
+                  <h3 className="text-base font-bold text-white">
+                    {computerDisplayName}
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    Saved connection &bull; {config.host}:{config.port}
+                  </p>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Paired Device or Manual Form */}
-          {config.token ? (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-zinc-950/80 border border-indigo-500/30 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-lg bg-indigo-500/20 text-indigo-400">
-                    <Monitor className="w-6 h-6" />
+              {/* 3. Error / Computer not found State (IP Changed or Offline) */}
+              {status === 'error' && (
+                <div className="p-5 rounded-2xl bg-zinc-950/90 border border-amber-500/30 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 shrink-0">
+                      <AlertTriangle className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white">Computer not found</h3>
+                      <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                        Could not reach <strong className="text-zinc-200">{computerDisplayName}</strong> at <code className="text-indigo-300 bg-zinc-900 px-1 py-0.5 rounded font-mono">{config.host}:{config.port}</code>. If your laptop&apos;s local network address changed, scan a new QR code.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white">
-                      {config.lastComputerName || pairedDevice?.computerName || 'My Laptop'}
-                    </h3>
-                    <p className="text-xs text-zinc-400">
-                      Saved Connection • {config.host}:{config.port}
-                    </p>
+
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowScanner(true)}
+                      className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25"
+                    >
+                      <Scan className="w-4 h-4" />
+                      <span>Scan New QR</span>
+                    </button>
                   </div>
                 </div>
-              </div>
-              
-              {/* Auto-reconnect */}
+              )}
+
+              {/* 4. Auth Failed State (Credentials Invalid / Server restarted without saved tokens) */}
+              {status === 'auth_failed' && (
+                <div className="p-5 rounded-2xl bg-rose-950/30 border border-rose-500/30 text-center space-y-3">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-semibold">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                    Pairing Credentials Invalid
+                  </div>
+                  <p className="text-xs text-zinc-300 leading-relaxed">
+                    The saved pairing credential was rejected. Scan a new QR code on your PC to refresh pairing.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowScanner(true)}
+                    className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition-all flex items-center justify-center gap-2"
+                  >
+                    <Scan className="w-4 h-4" />
+                    <span>Scan New QR</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Auto-reconnect Toggle */}
               <div className="flex items-center justify-between py-2 border-t border-zinc-800/50">
                 <label htmlFor="chk-auto-reconnect-paired" className="text-xs text-zinc-300 cursor-pointer">
                   Automatically reconnect
@@ -260,46 +291,59 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     Disconnect
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.preventDefault(); handleConnect(e); }}
-                    disabled={isConnecting || status === 'reconnecting'}
-                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 active:scale-[0.98] text-white font-medium text-sm transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {isConnecting || status === 'reconnecting' ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Reconnecting...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Reconnect</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); handleConnect(e); }}
+                      disabled={isConnecting}
+                      className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 active:scale-[0.98] text-white font-medium text-sm transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isConnecting ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Reconnecting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-4 h-4" />
+                          <span>Retry Connection</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowScanner(true)}
+                      className="py-3 px-3.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] text-zinc-200 hover:text-white font-medium text-sm transition-all flex items-center justify-center gap-1.5 border border-zinc-700"
+                      title="Scan new QR in case IP changed"
+                    >
+                      <Scan className="w-4 h-4 text-emerald-400" />
+                      <span>New QR</span>
+                    </button>
+                  </div>
                 )}
                 
                 <button
                   type="button"
                   onClick={onForgetDevice}
-                  className="w-full py-3 px-4 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 active:scale-[0.98] text-zinc-300 hover:text-white font-medium text-sm transition-all"
+                  className="w-full py-2.5 px-4 rounded-xl bg-zinc-900/80 border border-zinc-800 hover:bg-zinc-800 active:scale-[0.98] text-zinc-400 hover:text-rose-400 font-medium text-xs transition-all text-center"
                 >
-                  Forget this device
+                  Forget Device
                 </button>
               </div>
             </div>
           ) : (
+            /* First-time or Unpaired Device Section */
             <div className="space-y-4">
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2.5">
                 <button
                   type="button"
                   onClick={() => setShowScanner(true)}
-                  className="w-full py-3.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] text-white font-medium text-sm transition-all flex items-center justify-center gap-2 border border-zinc-700/50"
+                  className="w-full py-4 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-semibold text-sm transition-all flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/25"
                 >
-                  <Scan className="w-4 h-4 text-emerald-400" />
+                  <Scan className="w-5 h-5" />
                   <span>Scan QR Code to Pair Phone</span>
                 </button>
+                
                 <button
                   type="button"
                   onClick={fetchLocalHostAndShowQR}
@@ -309,28 +353,38 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   <span>I am the Host PC - Show QR</span>
                 </button>
               </div>
+            </div>
+          )}
 
-              <div className="flex items-center gap-4 text-zinc-600">
-                <div className="flex-1 h-px bg-zinc-800" />
-                <span className="text-xs font-semibold uppercase tracking-widest">or enter manually</span>
-                <div className="flex-1 h-px bg-zinc-800" />
-              </div>
+          {/* Advanced / Manual Connection Fallback */}
+          <div className="pt-2">
+            <div 
+              className="flex items-center gap-3 text-zinc-500 cursor-pointer hover:text-zinc-300 transition-colors py-1" 
+              onClick={() => setShowManual(!showManual)}
+            >
+              <div className="flex-1 h-px bg-zinc-800" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                Advanced / Manual Connection
+                <ArrowRight className={`w-3 h-3 transition-transform duration-200 ${showManual ? 'rotate-90' : ''}`} />
+              </span>
+              <div className="flex-1 h-px bg-zinc-800" />
+            </div>
 
-              <form onSubmit={handleConnect} className="space-y-3.5">
+            {showManual && (
+              <form onSubmit={handleConnect} className="space-y-3.5 animate-in slide-in-from-top-2 fade-in duration-200 pt-2">
                 {/* IP Address & Port */}
-              <div className="grid grid-cols-3 gap-2.5">
-                <div className="col-span-2 space-y-1.5">
-                  <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
-                    <span>Local IP Address</span>
-                    <button
-                      type="button"
-                      onClick={onOpenHelperGuide}
-                      className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-0.5"
-                    >
-                      <span>How to find?</span>
-                    </button>
-                  </label>
-                  <div className="relative">
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
+                      <span>Local IP Address</span>
+                      <button
+                        type="button"
+                        onClick={onOpenHelperGuide}
+                        className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-0.5"
+                      >
+                        <span>How to find?</span>
+                      </button>
+                    </label>
                     <input
                       id="input-computer-ip"
                       type="text"
@@ -342,113 +396,107 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                       required
                     />
                   </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-zinc-300">Port</label>
-                  <input
-                    id="input-computer-port"
-                    type="number"
-                    value={port}
-                    onChange={(e) => setPort(e.target.value)}
-                    placeholder="8765"
-                    disabled={isConnected}
-                    className="w-full bg-zinc-950/80 border border-zinc-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50 text-center font-mono"
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* 6-Digit Pairing Code */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
-                  <span>Pairing Code (6 Digits)</span>
-                  <span className="text-[11px] text-zinc-400">Printed in terminal</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500">
-                    <ShieldCheck className="w-4 h-4" />
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-zinc-300">Port</label>
+                    <input
+                      id="input-computer-port"
+                      type="number"
+                      value={port}
+                      onChange={(e) => setPort(e.target.value)}
+                      placeholder="8765"
+                      disabled={isConnected}
+                      className="w-full bg-zinc-950/80 border border-zinc-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50 text-center font-mono"
+                      required
+                    />
                   </div>
+                </div>
+
+                {/* 6-Digit Pairing Code */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
+                    <span>Pairing Code (6 Digits)</span>
+                    <span className="text-[11px] text-zinc-400">Printed in PC terminal</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500">
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <input
+                      id="input-pairing-code"
+                      type="text"
+                      maxLength={6}
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="e.g. 483921"
+                      disabled={isConnected}
+                      className="w-full bg-zinc-950/80 border border-zinc-700 rounded-xl pl-9 pr-3.5 py-2.5 text-base font-mono tracking-widest text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                    />
+                  </div>
+                </div>
+
+                {/* Auto-reconnect Checkbox */}
+                <div className="flex items-center justify-between py-1">
+                  <label htmlFor="chk-auto-reconnect" className="text-xs text-zinc-300 cursor-pointer">
+                    Automatically reconnect if signal drops
+                  </label>
                   <input
-                    id="input-pairing-code"
-                    type="text"
-                    maxLength={6}
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                    placeholder="e.g. 483921"
-                    disabled={isConnected}
-                    className="w-full bg-zinc-950/80 border border-zinc-700 rounded-xl pl-9 pr-3.5 py-2.5 text-base font-mono tracking-widest text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
-                    required
+                    id="chk-auto-reconnect"
+                    type="checkbox"
+                    checked={autoReconnect}
+                    onChange={(e) => setAutoReconnect(e.target.checked)}
+                    className="w-4 h-4 accent-indigo-500 rounded bg-zinc-900 border-zinc-700 cursor-pointer"
                   />
                 </div>
-              </div>
 
-              {/* Auto-reconnect */}
-              <div className="flex items-center justify-between py-1">
-                <label htmlFor="chk-auto-reconnect" className="text-xs text-zinc-300 cursor-pointer">
-                  Automatically reconnect if signal drops
-                </label>
-                <input
-                  id="chk-auto-reconnect"
-                  type="checkbox"
-                  checked={autoReconnect}
-                  onChange={(e) => setAutoReconnect(e.target.checked)}
-                  className="w-4 h-4 accent-indigo-500 rounded bg-zinc-900 border-zinc-700 cursor-pointer"
-                />
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-2 flex gap-2.5">
-                {isConnected ? (
-                  <button
-                    id="btn-disconnect"
-                    type="button"
-                    onClick={onDisconnect}
-                    className="w-full py-3 px-4 rounded-xl bg-rose-600/90 hover:bg-rose-500 active:scale-[0.98] text-white font-medium text-sm transition-all shadow-lg shadow-rose-600/20"
-                  >
-                    Disconnect
-                  </button>
-                ) : (
-                  <button
-                    id="btn-connect"
-                    type="submit"
-                    disabled={isConnecting}
-                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 active:scale-[0.98] text-white font-medium text-sm transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {isConnecting ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Connecting...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Connect</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                )}
-              </div>
-            </form>
-            </div>
-          )}
+                {/* Action Buttons */}
+                <div className="pt-2 flex gap-2.5">
+                  {isConnected ? (
+                    <button
+                      id="btn-disconnect"
+                      type="button"
+                      onClick={onDisconnect}
+                      className="w-full py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white font-medium text-sm transition-all shadow-lg shadow-rose-600/20"
+                    >
+                      Disconnect
+                    </button>
+                  ) : (
+                    <button
+                      id="btn-connect-submit"
+                      type="submit"
+                      disabled={isConnecting}
+                      className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 active:scale-[0.98] text-white font-medium text-sm transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isConnecting ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Connecting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Save & Connect</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
+          </div>
 
           {/* Quick Helper Guide Callout */}
           <div className="pt-2 border-t border-zinc-800/80">
             <button
-              id="btn-modal-open-guide"
+              id="btn-open-helper-instructions"
               type="button"
               onClick={onOpenHelperGuide}
-              className="w-full flex items-center justify-between p-3 rounded-xl bg-zinc-950/60 hover:bg-zinc-800/60 border border-zinc-800 transition-colors text-left"
+              className="w-full py-2 px-3 rounded-xl bg-zinc-950/60 hover:bg-zinc-950 border border-zinc-800 text-xs text-zinc-400 hover:text-indigo-400 flex items-center justify-between transition-colors"
             >
-              <div className="flex items-center gap-2.5">
-                <Monitor className="w-4 h-4 text-indigo-400" />
-                <div>
-                  <p className="text-xs font-semibold text-zinc-200">Need the Windows Helper?</p>
-                  <p className="text-[11px] text-zinc-400">View code, instructions & requirements.txt</p>
-                </div>
+              <div className="flex items-center gap-2">
+                <HelpCircle className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Windows Helper Setup Instructions</span>
               </div>
-              <HelpCircle className="w-4 h-4 text-zinc-400" />
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>

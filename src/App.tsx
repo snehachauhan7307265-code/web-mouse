@@ -227,7 +227,24 @@ export default function App() {
         
         // Save the token to configuration for persistent pairing
         if (msg.type === 'auth_result' && msg.success && msg.token) {
-          updateConfig({ ...config, token: msg.token, lastComputerName: msg.computerName || 'Windows PC' });
+          const computerName = msg.computerName || 'My Laptop';
+          const clientCfg = wsClientRef.current?.getConfig();
+          updateConfig({
+            token: msg.token,
+            qrToken: undefined,
+            lastComputerName: computerName,
+          });
+          const newPaired: ConnectedDeviceInfo = {
+            computerName,
+            screenWidth: msg.screenWidth,
+            screenHeight: msg.screenHeight,
+            ip: clientCfg?.host || config.host,
+            port: clientCfg?.port || config.port,
+          };
+          setPairedDevice(newPaired);
+          try {
+            localStorage.setItem('webmouse_paired_device', JSON.stringify(newPaired));
+          } catch (e) {}
         }
       }
     });
@@ -292,10 +309,20 @@ export default function App() {
     try {
       localStorage.removeItem('webmouse_paired_device');
     } catch (e) {}
-    const newConfig = { ...config, code: '' };
-    delete newConfig.token;
-    delete newConfig.lastComputerName;
-    updateConfig(newConfig); // Clear auth code and token
+    setConfig((prev) => {
+      const updated: ConnectionConfig = {
+        ...prev,
+        code: '',
+        token: undefined,
+        qrToken: undefined,
+        lastComputerName: undefined,
+      };
+      try {
+        localStorage.setItem('webmouse_config', JSON.stringify(updated));
+      } catch (e) {}
+      wsClientRef.current?.updateConfig(updated, settings.deviceName);
+      return updated;
+    });
     showToast('Device forgotten');
   };
 
@@ -393,6 +420,8 @@ export default function App() {
               }
             }}
             onDisconnect={handleDisconnect}
+            onOpenConnectionModal={() => setIsConnectionModalOpen(true)}
+            onForgetDevice={handleForgetDevice}
           />
         )}
 

@@ -12,6 +12,7 @@ export class WebSocketClient {
   private onNotification?: (msg: string) => void;
   private onClipboardData?: (text: string) => void;
   private onIncomingMessage?: (msg: any) => void;
+  private onAuthSuccess?: (token: string) => void;
   
   private pingInterval: any = null;
   private reconnectTimeout: any = null;
@@ -30,6 +31,7 @@ export class WebSocketClient {
       onNotification?: (msg: string) => void;
       onClipboardData?: (text: string) => void;
       onIncomingMessage?: (msg: any) => void;
+      onAuthSuccess?: (token: string) => void;
     }
   ) {
     this.config = config;
@@ -41,11 +43,16 @@ export class WebSocketClient {
     this.onNotification = callbacks.onNotification;
     this.onClipboardData = callbacks.onClipboardData;
     this.onIncomingMessage = callbacks.onIncomingMessage;
+    this.onAuthSuccess = callbacks.onAuthSuccess;
   }
 
   public updateConfig(config: ConnectionConfig, deviceName: string) {
     this.config = config;
     this.deviceName = deviceName;
+  }
+
+  public getConfig(): ConnectionConfig {
+    return this.config;
   }
 
   private setStatus(newStatus: ConnectionStatus) {
@@ -116,8 +123,8 @@ export class WebSocketClient {
         // Step 1: Send authentication handshake with token or 6-digit code
         this.send({
           type: 'auth',
-          code: this.config.code.trim(),
-          token: this.config.token,
+          code: this.config.code?.trim() || '',
+          token: this.config.qrToken || this.config.token,
           deviceName: this.deviceName || 'WebMouse Phone',
         });
       };

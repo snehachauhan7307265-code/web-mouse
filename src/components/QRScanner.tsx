@@ -28,6 +28,25 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
           // Attempt to parse JSON
           const data = JSON.parse(decodedText);
           if (data.type === 'webmouse-pair') {
+            // 1. Validate version
+            if (data.version && data.version > 2) {
+              setError("Unsupported WebMouse QR version. Please update WebMouse.");
+              return;
+            }
+            // 2. Check expiration
+            if (data.expiresAt) {
+              const now = Math.floor(Date.now() / 1000);
+              if (now > data.expiresAt) {
+                setError("This QR code has expired. Click 'Generate New QR' on your laptop.");
+                return;
+              }
+            }
+            // 3. Validate host
+            if (!data.host) {
+              setError("QR Code is missing computer IP address.");
+              return;
+            }
+
             if (isScanning) {
               isScanning = false;
               scanner.stop().then(() => {
@@ -37,7 +56,7 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
               if (isMounted) onScan(data);
             }
           } else {
-            setError("Invalid QR Code for WebMouse.");
+            setError("Invalid QR Code: Not a WebMouse pairing code.");
           }
         } catch (e) {
           setError("Invalid QR Code format.");

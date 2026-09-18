@@ -113,6 +113,7 @@ class WebMouseServer:
         self.pairing_code = pairing_code
         self.authenticated_clients: Set[WebSocketServerProtocol] = set()
         self.client_info: Dict[WebSocketServerProtocol, str] = {}
+        self.qr_tokens: Dict[str, float] = {} # temp token -> expiry timestamp
         
         # Token storage for persistent pairing
         self.trusted_devices_file = Path.home() / "Downloads" / "WebMouse" / "trusted_devices.json"
@@ -235,11 +236,22 @@ class WebMouseServer:
 
         # Send immediate server info so a local laptop client can generate a QR code
         try:
+            import time, secrets
+            temp_token = secrets.token_hex(16)
+            expires_at = time.time() + 60
+            self.qr_tokens[temp_token] = expires_at
+            
+            # Cleanup old tokens
+            current_time = time.time()
+            self.qr_tokens = {k: v for k, v in self.qr_tokens.items() if v > current_time}
+
             await websocket.send(json.dumps({
                 "type": "server_info",
                 "ip": get_local_ip(),
                 "port": self.port,
-                "version": 1
+                "version": 2,
+                "token": temp_token,
+                "expiresAt": int(expires_at)
             }))
         except Exception as e:
             print(f"Error sending server_info: {e}")
@@ -257,6 +269,22 @@ class WebMouseServer:
 
                 msg_type = data.get("type", "")
 
+                # 0. Request fresh QR token
+                if msg_type == "request_qr_token":
+                    import time, secrets
+                    temp_token = secrets.token_hex(16)
+                    expires_at = time.time() + 60
+                    self.qr_tokens[temp_token] = expires_at
+                    await websocket.send(json.dumps({
+                        "type": "server_info",
+                        "ip": get_local_ip(),
+                        "port": self.port,
+                        "version": 2,
+                        "token": temp_token,
+                        "expiresAt": int(expires_at)
+                    }))
+                    continue
+
                 # 1. Authentication Handshake
                 if msg_type == "auth":
                     code = str(data.get("code", "")).strip()
@@ -268,7 +296,19 @@ class WebMouseServer:
 
                     if token and token in self.trusted_tokens:
                         is_authenticated = True
-                        print(f"AUTHENTICATED: '{device_name}' from {client_addr} auto-reconnected via token.")
+                        print(f"AUTHENTICATED: '{device_name}' from {client_addr} auto-reconnected via trusted token.")
+                    elif token and token in self.qr_tokens:
+                        import time
+                        if self.qr_tokens[token] > time.time():
+                            is_authenticated = True
+                            import secrets
+                            new_token = secrets.token_hex(32)
+                            self.trusted_tokens[new_token] = {"device_name": device_name, "paired_at": str(Path.home())}
+                            self._save_trusted_tokens()
+                            del self.qr_tokens[token] # Use once
+                            print(f"AUTHENTICATED: '{device_name}' from {client_addr} paired successfully via QR one-time token.")
+                        else:
+                            print(f"AUTH FAILED: Expired QR token from {client_addr}")
                     elif code == self.pairing_code:
                         is_authenticated = True
                         import secrets

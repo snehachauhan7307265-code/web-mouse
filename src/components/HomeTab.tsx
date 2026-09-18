@@ -8,7 +8,10 @@ import {
   MonitorPlay, 
   MonitorUp, 
   History,
-  Trash2
+  Trash2,
+  Scan,
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
 import { ConnectionStatus, ConnectedDeviceInfo, LogEntry } from '../types';
 
@@ -22,6 +25,8 @@ interface HomeTabProps {
   onClearLogs: () => void;
   onReconnect: () => void;
   onDisconnect: () => void;
+  onOpenConnectionModal?: () => void;
+  onForgetDevice?: () => void;
 }
 
 export const HomeTab: React.FC<HomeTabProps> = ({
@@ -33,51 +38,132 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   onNavigate,
   onClearLogs,
   onReconnect,
-  onDisconnect
+  onDisconnect,
+  onOpenConnectionModal,
+  onForgetDevice
 }) => {
   const isConnected = status === 'connected';
-  const computerName = deviceInfo?.computerName || pairedDevice?.computerName || 'Windows PC';
+  const isConnecting = status === 'connecting' || status === 'reconnecting';
+  const computerName = deviceInfo?.computerName || pairedDevice?.computerName || 'My Laptop';
 
   return (
-    <div className="flex-1 flex flex-col p-4 overflow-y-auto space-y-6 pb-6 bg-zinc-950 text-white">
-      {/* 1. Dashboard Header */}
-      <div className="flex flex-col gap-1 mt-2">
-        <h1 className="text-3xl font-bold tracking-tight">Control</h1>
-        <div className="flex items-center gap-2">
-          {isConnected ? (
-            <>
-              <div className="w-2.5 h-2.5 bg-green-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.5)]"></div>
-              <span className="text-sm font-medium text-zinc-300">Connected to <span className="text-white font-semibold">{computerName}</span></span>
-              <span className="text-xs text-zinc-500 ml-1 px-1.5 py-0.5 rounded-md bg-zinc-800/50">
-                ⚡ {latencyMs !== undefined ? `${latencyMs} ms` : 'Measuring...'}
-              </span>
-            </>
-          ) : (
-            <>
-              <div className="w-2.5 h-2.5 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.5)]"></div>
-              <span className="text-sm font-medium text-zinc-400">Disconnected</span>
-              <button 
-                onClick={onReconnect}
-                className="ml-2 text-xs text-indigo-400 font-semibold hover:text-indigo-300 transition-colors"
-              >
-                Reconnect
-              </button>
-            </>
-          )}
+    <div className="flex-1 flex flex-col p-4 overflow-y-auto space-y-5 pb-8 bg-zinc-950 text-white">
+      {/* 1. Connection Status Card */}
+      {isConnected ? (
+        <div className="w-full p-5 rounded-3xl bg-emerald-950/30 border border-emerald-500/40 flex flex-col items-center justify-center text-center shadow-lg shadow-emerald-950/20 animate-in fade-in duration-200">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-semibold mb-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>🟢 Connected</span>
+          </div>
+          <h2 className="text-xl font-bold text-white tracking-tight">{computerName}</h2>
+          <p className="text-xs text-emerald-300/90 font-medium mt-0.5">WebMouse Ready</p>
+          
+          <div className="flex items-center gap-3 mt-4 pt-3 border-t border-emerald-500/20 w-full justify-between text-xs">
+            <span className="text-zinc-400 font-mono">
+              ⚡ {latencyMs !== undefined ? `${latencyMs} ms latency` : 'Active'}
+            </span>
+            <button
+              onClick={onDisconnect}
+              className="px-3 py-1 rounded-lg bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-colors text-xs font-medium border border-zinc-800"
+            >
+              Disconnect
+            </button>
+          </div>
         </div>
-      </div>
+      ) : isConnecting ? (
+        <div className="w-full p-4 rounded-2xl bg-amber-950/30 border border-amber-500/30 flex items-center justify-between shadow-lg shadow-amber-950/20">
+          <div className="flex items-center gap-3">
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+            <div>
+              <span className="text-xs font-semibold text-amber-400">🟡 Reconnecting...</span>
+              <h3 className="text-sm font-bold text-white">{computerName}</h3>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onReconnect}
+              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium transition-all active:scale-95 flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>Retry</span>
+            </button>
+            {onForgetDevice && (
+              <button
+                onClick={onForgetDevice}
+                className="px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-rose-400 text-xs transition-colors"
+              >
+                Forget
+              </button>
+            )}
+          </div>
+        </div>
+      ) : status === 'error' || pairedDevice ? (
+        <div className="w-full p-4 rounded-2xl bg-zinc-900/90 border border-amber-500/30 space-y-3 shadow-lg">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="text-sm font-bold text-white">Computer not found</h3>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Could not reach <strong className="text-zinc-200">{computerName}</strong>. If your laptop&apos;s IP address changed, scan a new QR.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={onOpenConnectionModal}
+              className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all"
+            >
+              <Scan className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Scan New QR</span>
+            </button>
+            <button
+              onClick={onReconnect}
+              className="py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium text-xs transition-colors"
+            >
+              Retry
+            </button>
+            {onForgetDevice && (
+              <button
+                onClick={onForgetDevice}
+                className="py-2 px-2.5 rounded-xl bg-zinc-800/60 hover:bg-zinc-800 text-zinc-400 hover:text-rose-400 font-medium text-xs transition-colors"
+              >
+                Forget
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="w-full p-5 rounded-3xl bg-gradient-to-br from-indigo-950/40 via-zinc-900 to-indigo-950/30 border border-indigo-500/30 flex flex-col items-center text-center space-y-3 shadow-xl">
+          <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-2xl border border-emerald-500/20 shadow-inner">
+            <Scan className="w-6 h-6 text-emerald-400" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-white">Connect to Laptop</h2>
+            <p className="text-xs text-zinc-400 mt-0.5 max-w-xs">
+              Open WebMouse on your laptop, click &ldquo;Show QR&rdquo;, and scan with your phone.
+            </p>
+          </div>
+          <button
+            onClick={onOpenConnectionModal}
+            className="w-full max-w-xs py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 transition-all"
+          >
+            <Scan className="w-4 h-4" />
+            <span>Scan QR Code to Pair</span>
+          </button>
+        </div>
+      )}
 
       {/* 2. Main Touchpad Card */}
       <button 
         onClick={() => onNavigate('mouse')}
-        className="w-full relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600/30 to-purple-600/10 border border-indigo-500/30 p-6 flex flex-col items-center justify-center min-h-[160px] group transition-all active:scale-[0.98]"
+        className="w-full relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600/30 to-purple-600/10 border border-indigo-500/30 p-6 flex flex-col items-center justify-center min-h-[150px] group transition-all active:scale-[0.98]"
       >
         <div className="absolute inset-0 bg-indigo-500/5 group-hover:bg-indigo-500/10 transition-colors"></div>
-        <div className="p-4 bg-indigo-500/20 rounded-2xl mb-4 group-hover:scale-110 transition-transform shadow-lg shadow-indigo-500/20">
+        <div className="p-4 bg-indigo-500/20 rounded-2xl mb-3 group-hover:scale-110 transition-transform shadow-lg shadow-indigo-500/20">
           <MousePointer2 className="w-8 h-8 text-indigo-400" />
         </div>
         <h2 className="text-xl font-bold text-white mb-1">Touchpad</h2>
-        <p className="text-sm text-indigo-200/70">Swipe to control your computer</p>
+        <p className="text-xs text-indigo-200/70">Swipe to control your computer</p>
       </button>
 
       {/* 3. Quick Action Grid */}
@@ -89,7 +175,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           <div className="p-2 bg-zinc-800 rounded-lg mb-3 text-zinc-300 group-hover:text-white">
             <KeyboardIcon className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold text-zinc-100">Keyboard</h3>
+          <h3 className="font-semibold text-zinc-100 text-sm">Keyboard</h3>
           <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Type on your computer</p>
         </button>
 
@@ -100,7 +186,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           <div className="p-2 bg-blue-500/10 text-blue-400 rounded-lg mb-3">
             <FolderUp className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold text-zinc-100">File Share</h3>
+          <h3 className="font-semibold text-zinc-100 text-sm">File Share</h3>
           <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Send files to PC</p>
         </button>
 
@@ -111,11 +197,10 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           <div className="p-2 bg-pink-500/10 text-pink-400 rounded-lg mb-3">
             <ImageIcon className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold text-zinc-100">Photos</h3>
+          <h3 className="font-semibold text-zinc-100 text-sm">Photos</h3>
           <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Share photos</p>
         </button>
 
-        {/* 4. Quick Share */}
         <button 
           onClick={() => onNavigate('share')}
           className="flex flex-col items-start p-4 rounded-2xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 transition-all active:scale-95"
@@ -123,7 +208,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg mb-3">
             <Link className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold text-zinc-100">Quick Share</h3>
+          <h3 className="font-semibold text-zinc-100 text-sm">Quick Share</h3>
           <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Send links & text</p>
         </button>
 
@@ -134,7 +219,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg mb-3">
             <MonitorPlay className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold text-zinc-100">Media</h3>
+          <h3 className="font-semibold text-zinc-100 text-sm">Media</h3>
           <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Control media</p>
         </button>
 
@@ -145,18 +230,16 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           <div className="p-2 bg-rose-500/10 text-rose-400 rounded-lg mb-3">
             <MonitorUp className="w-5 h-5" />
           </div>
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-zinc-100">Projector</h3>
-          </div>
+          <h3 className="font-semibold text-zinc-100 text-sm">Projector</h3>
           <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Share live screen</p>
         </button>
       </div>
 
-      {/* 5. Recent Activity */}
+      {/* 4. Recent Activity */}
       <div className="flex flex-col gap-3 pt-2">
         <div className="flex items-center justify-between px-1">
-          <h3 className="text-lg font-bold flex items-center gap-2 text-zinc-100">
-            <History className="w-5 h-5 text-zinc-400" />
+          <h3 className="text-base font-bold flex items-center gap-2 text-zinc-100">
+            <History className="w-4 h-4 text-zinc-400" />
             Recent Activity
           </h3>
           {logs.length > 0 && (
@@ -172,21 +255,21 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col">
           {logs.length === 0 ? (
-            <div className="p-6 text-center text-sm text-zinc-500">
+            <div className="p-5 text-center text-xs text-zinc-500">
               No recent activity
             </div>
           ) : (
-            <div className="flex flex-col max-h-48 overflow-y-auto divide-y divide-zinc-800/50">
-              {[...logs].reverse().slice(0, 10).map((log) => (
+            <div className="flex flex-col max-h-40 overflow-y-auto divide-y divide-zinc-800/50">
+              {[...logs].reverse().slice(0, 8).map((log) => (
                 <div key={log.id} className="p-3 flex items-start gap-3">
-                  <div className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${
+                  <div className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${
                     log.type === 'error' ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]' :
                     log.type === 'success' ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)]' :
                     log.type === 'warning' ? 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.6)]' :
                     'bg-indigo-500 shadow-[0_0_6px_rgba(99,102,241,0.6)]'
                   }`}></div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-zinc-200 truncate">{log.message}</p>
+                    <p className="text-xs text-zinc-200 truncate">{log.message}</p>
                     <p className="text-[10px] text-zinc-500 mt-0.5">
                       {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
@@ -194,41 +277,6 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* 6. Connection Card */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex flex-col gap-4 mt-2">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl ${isConnected ? 'bg-green-500/10 text-green-400' : 'bg-zinc-800 text-zinc-500'}`}>
-              <MonitorPlay className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-zinc-100">{computerName}</h3>
-              <p className={`text-xs mt-0.5 font-medium ${isConnected ? 'text-green-400' : 'text-zinc-500'}`}>
-                {isConnected ? `Connected • ${latencyMs !== undefined ? `${latencyMs} ms` : 'Measuring...'}` : 'Disconnected'}
-              </p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex gap-2">
-          {isConnected ? (
-            <button 
-              onClick={onDisconnect}
-              className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-semibold rounded-xl transition-colors active:scale-95"
-            >
-              Disconnect
-            </button>
-          ) : (
-            <button 
-              onClick={onReconnect}
-              className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition-colors active:scale-95"
-            >
-              Reconnect
-            </button>
           )}
         </div>
       </div>
