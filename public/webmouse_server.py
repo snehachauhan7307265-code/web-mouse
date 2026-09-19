@@ -26,24 +26,130 @@ except ImportError:
     pyperclip = None
     print("[WARNING] pyperclip not installed. Clipboard sync will be disabled.")
 
-try:
-    import pyautogui
-    # Disable PyAutoGUI's default pause for real-time cursor responsiveness
-    pyautogui.PAUSE = 0.0
-    # Disable PyAutoGUI failsafe so moving to edge of screen doesn't crash server
-    pyautogui.FAILSAFE = False
-except ImportError:
-    print("\n[ERROR] Missing required package 'pyautogui'!")
-    print("Please install requirements using: pip install -r requirements.txt\n")
-    sys.exit(1)
-
+# Auto-install or fallback for websockets
 try:
     import websockets
     from websockets.server import WebSocketServerProtocol
 except ImportError:
-    print("\n[ERROR] Missing required package 'websockets'!")
-    print("Please install requirements using: pip install -r requirements.txt\n")
-    sys.exit(1)
+    import subprocess
+    print("[*] 'websockets' library not found. Installing automatically via pip...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "websockets"])
+        import websockets
+        from websockets.server import WebSocketServerProtocol
+        print("[OK] 'websockets' installed successfully.")
+    except Exception as _ws_err:
+        print(f"\n[ERROR] Could not install 'websockets': {_ws_err}")
+        print("Please run in Command Prompt: pip install websockets\n")
+        input("Press Enter to exit...")
+        sys.exit(1)
+
+# Windows Virtual Key Code mappings for native user32 input
+VK_CODE_MAP = {
+    "enter": 0x0D, "return": 0x0D, "backspace": 0x08, "tab": 0x09, "escape": 0x1B, "esc": 0x1B,
+    "space": 0x20, "left": 0x25, "up": 0x26, "right": 0x27, "down": 0x28, "delete": 0x2E,
+    "shift": 0x10, "ctrl": 0x11, "control": 0x11, "alt": 0x12, "win": 0x5B, "capslock": 0x14,
+    "home": 0x24, "end": 0x23, "pageup": 0x21, "pagedown": 0x22, "insert": 0x2D, "printscreen": 0x2C,
+    "volumemute": 0xAD, "volumedown": 0xAE, "volumeup": 0xAF, "playpause": 0xB3,
+    "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73, "f5": 0x74, "f6": 0x75,
+    "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
+    "a": 0x41, "b": 0x42, "c": 0x43, "d": 0x44, "v": 0x56, "t": 0x54, "w": 0x57,
+}
+
+class WindowsNativeInput:
+    """Built-in Windows cursor and keyboard controller using ctypes.windll.user32.
+    Requires ZERO pip dependencies and works on all Windows systems."""
+    def __init__(self):
+        import ctypes
+        self.user32 = ctypes.windll.user32
+        self.PAUSE = 0.0
+        self.FAILSAFE = False
+
+    def size(self):
+        return (self.user32.GetSystemMetrics(0), self.user32.GetSystemMetrics(1))
+
+    def moveRel(self, dx, dy, _pause=False):
+        # MOUSEEVENTF_MOVE = 0x0001
+        self.user32.mouse_event(0x0001, int(dx), int(dy), 0, 0)
+
+    def click(self, button="left"):
+        if button == "left":
+            self.user32.mouse_event(0x0002, 0, 0, 0, 0) # LEFTDOWN
+            self.user32.mouse_event(0x0004, 0, 0, 0, 0) # LEFTUP
+        elif button == "right":
+            self.user32.mouse_event(0x0008, 0, 0, 0, 0) # RIGHTDOWN
+            self.user32.mouse_event(0x0010, 0, 0, 0, 0) # RIGHTUP
+        elif button == "middle":
+            self.user32.mouse_event(0x0020, 0, 0, 0, 0) # MIDDLEDOWN
+            self.user32.mouse_event(0x0040, 0, 0, 0, 0) # MIDDLEUP
+
+    def doubleClick(self, button="left"):
+        import time
+        self.click(button)
+        time.sleep(0.05)
+        self.click(button)
+
+    def mouseDown(self, button="left"):
+        if button == "left":
+            self.user32.mouse_event(0x0002, 0, 0, 0, 0)
+        elif button == "right":
+            self.user32.mouse_event(0x0008, 0, 0, 0, 0)
+        elif button == "middle":
+            self.user32.mouse_event(0x0020, 0, 0, 0, 0)
+
+    def mouseUp(self, button="left"):
+        if button == "left":
+            self.user32.mouse_event(0x0004, 0, 0, 0, 0)
+        elif button == "right":
+            self.user32.mouse_event(0x0010, 0, 0, 0, 0)
+        elif button == "middle":
+            self.user32.mouse_event(0x0040, 0, 0, 0, 0)
+
+    def scroll(self, amount):
+        # MOUSEEVENTF_WHEEL = 0x0800
+        self.user32.mouse_event(0x0800, 0, 0, int(amount * 120), 0)
+
+    def hscroll(self, amount):
+        # MOUSEEVENTF_HWHEEL = 0x1000
+        self.user32.mouse_event(0x1000, 0, 0, int(amount * 120), 0)
+
+    def press(self, key):
+        vk = VK_CODE_MAP.get(str(key).lower())
+        if vk:
+            self.user32.keybd_event(vk, 0, 0, 0)
+            self.user32.keybd_event(vk, 0, 2, 0) # KEYEVENTF_KEYUP = 2
+
+    def write(self, text, interval=0.001):
+        for char in text:
+            code = ord(char)
+            # KEYEVENTF_UNICODE = 4, KEYEVENTF_KEYUP = 2
+            self.user32.keybd_event(0, code, 4, 0)
+            self.user32.keybd_event(0, code, 4 | 2, 0)
+
+    def hotkey(self, *keys):
+        vks = [VK_CODE_MAP.get(str(k).lower()) for k in keys if VK_CODE_MAP.get(str(k).lower())]
+        for vk in vks:
+            self.user32.keybd_event(vk, 0, 0, 0)
+        for vk in reversed(vks):
+            self.user32.keybd_event(vk, 0, 2, 0)
+
+# Auto-install or fallback for pyautogui
+try:
+    import pyautogui
+    pyautogui.PAUSE = 0.0
+    pyautogui.FAILSAFE = False
+except ImportError:
+    import subprocess
+    print("[*] 'pyautogui' not found. Trying automatic pip installation...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pyautogui"])
+        import pyautogui
+        pyautogui.PAUSE = 0.0
+        pyautogui.FAILSAFE = False
+        print("[OK] 'pyautogui' installed successfully.")
+    except Exception as _pya_err:
+        print(f"[INFO] Using native Windows user32 controller (zero pip dependencies needed).")
+        pyautogui = WindowsNativeInput()
 
 
 # Key mapping dictionary from web keys to PyAutoGUI key names
@@ -1539,3 +1645,13 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n[!] WebMouse Server stopped by user.")
         sys.exit(0)
+    except Exception as e:
+        import traceback
+        print("\n" + "=" * 55)
+        print(" [!] WebMouse Server encountered an error:")
+        print("=" * 55)
+        traceback.print_exc()
+        print("=" * 55)
+        print("Please check the error above.")
+        input("\nPress Enter to exit...")
+        sys.exit(1)
