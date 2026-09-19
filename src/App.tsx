@@ -113,10 +113,10 @@ export default function App() {
 
   // Modals
   const [isConnectionModalOpen, setIsConnectionModalOpen] = useState(false);
-  const [connectionModalView, setConnectionModalView] = useState<'normal' | 'scanner' | 'qr_host'>('normal');
+  const [connectionModalView, setConnectionModalView] = useState<'normal' | 'scanner' | 'qr_host' | 'manual_pin'>('normal');
   const [isHelperGuideOpen, setIsHelperGuideOpen] = useState(false);
 
-  const openConnectionModal = (view: 'normal' | 'scanner' | 'qr_host' = 'normal') => {
+  const openConnectionModal = (view: 'normal' | 'scanner' | 'qr_host' | 'manual_pin' = 'normal') => {
     setConnectionModalView(view);
     setIsConnectionModalOpen(true);
   };

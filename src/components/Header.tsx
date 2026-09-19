@@ -7,7 +7,7 @@ interface HeaderProps {
   deviceInfo: ConnectedDeviceInfo | null;
   latencyMs?: number;
   isActive?: boolean;
-  onOpenConnectionModal: (view?: 'normal' | 'scanner' | 'qr_host') => void;
+  onOpenConnectionModal: (view?: 'normal' | 'scanner' | 'qr_host' | 'manual_pin') => void;
   onOpenHelperGuide: () => void;
 }
 

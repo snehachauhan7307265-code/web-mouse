@@ -304,10 +304,39 @@ export const WindowsHelperModal: React.FC<WindowsHelperModalProps> = ({ isOpen, 
           {/* TAB 1: Step-by-Step Guide */}
           {activeTab === 'guide' && (
             <div className="space-y-4 leading-relaxed">
+              {/* 1-Click Launchers (Most convenient) */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-950/60 via-zinc-900 to-indigo-950/40 border border-indigo-500/40 space-y-3">
+                <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs uppercase tracking-wider">
+                  <Terminal className="w-4 h-4 text-indigo-400" />
+                  <span>1-Click CMD Launcher (Recommended)</span>
+                </div>
+                <p className="text-[11px] text-zinc-300">
+                  Just download and double-click. A black Command Prompt (CMD) window will open, showing your Laptop IP and 6-digit PIN:
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <a
+                    href="/run_webmouse.bat"
+                    download="run_webmouse.bat"
+                    className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-md"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download run_webmouse.bat</span>
+                  </a>
+                  <a
+                    href="/install_webmouse.bat"
+                    download="install_webmouse.bat"
+                    className="py-2.5 px-3 bg-zinc-800 hover:bg-zinc-700 active:scale-98 text-zinc-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 border border-zinc-700 transition-all shadow-sm"
+                  >
+                    <Download className="w-4 h-4 text-emerald-400" />
+                    <span>Auto-Installer (.bat)</span>
+                  </a>
+                </div>
+              </div>
+
               {/* 10-Step Simple Instructions */}
               <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-3">
                 <div className="text-indigo-400 font-bold text-xs uppercase tracking-wider">
-                  Very Simple Windows Instructions
+                  Manual Windows CMD Instructions
                 </div>
                 <ol className="space-y-2 text-[11px] text-zinc-300 list-decimal list-inside">
                   <li><strong className="text-zinc-100">Install Python:</strong> Download Python 3.8+ from <span className="text-indigo-400">python.org</span> (check "Add to PATH").</li>

@@ -750,17 +750,22 @@ class WebMouseServer:
 
     def print_banner(self):
         lan_ip = get_local_ip()
-        print("\n" + "=" * 40)
-        print("          WEBMOUSE V1")
-        print("=" * 40 + "\n")
-        print("Windows Helper: RUNNING")
-        print(f"WebSocket: 0.0.0.0:{self.port}")
-        print(f"LAN IP: {lan_ip}\n")
-        print("QR Pairing Gateway:")
-        print(f"http://{lan_ip}:{self.port}/\n")
-        print(f"PAIRING CODE: {self.pairing_code}\n")
-        print("Waiting for phone...\n")
-        print("=" * 40 + "\n")
+        code_spaced = "  ".join(list(self.pairing_code))
+        print("\n" + "=" * 62)
+        print("           WEBMOUSE V1 — WINDOWS HELPER (CMD)")
+        print("=" * 62)
+        print(f"  [STATUS]           RUNNING (DO NOT CLOSE THIS WINDOW)")
+        print(f"  [LAPTOP WI-FI IP]  {lan_ip}")
+        print(f"  [PORT]             {self.port}")
+        print("=" * 62)
+        print(f"  >>> 6-DIGIT PAIRING PIN:   [  {code_spaced}  ] <<<")
+        print("=" * 62)
+        print("  HOW TO CONNECT FROM YOUR PHONE:")
+        print(f"  1. Open WebMouse on your phone browser")
+        print(f"  2. Tap 'Enter 6-Digit PIN' (or scan QR)")
+        print(f"  3. Enter IP: {lan_ip}  and  PIN: {self.pairing_code}")
+        print(f"  4. Tap 'Connect' — Your phone controls your mouse!")
+        print("=" * 62 + "\n")
 
     async def process_request(self, *args, **kwargs):
         """
@@ -1666,21 +1671,47 @@ async def main():
     else:
         print(f"[+] WebMouse V1 Background Helper active on port {server.port} with System Tray.")
 
-    # Start the WebSocket server (with integrated HTTP Gateway) and the folder watcher concurrently
-    ws_server = websockets.serve(
-        server.handle_connection,
-        server.host,
-        server.port,
-        process_request=server.process_request,
-        ping_interval=20,
-        ping_timeout=20,
-        max_size=10_000_000
-    )
-    
-    await asyncio.gather(
-        ws_server,
-        server.watch_send_folder()
-    )
+    async def safe_watch_send_folder(self):
+        try:
+            await self.watch_send_folder()
+        except Exception as e:
+            print(f"[INFO] Outgoing folder watcher paused: {e}")
+
+    # Start the WebSocket server (with integrated HTTP Gateway)
+    asyncio.create_task(server.safe_watch_send_folder())
+
+    try:
+        async with websockets.serve(
+            server.handle_connection,
+            server.host,
+            server.port,
+            process_request=server.process_request,
+            ping_interval=20,
+            ping_timeout=20,
+            max_size=10_000_000
+        ):
+            print(f"[*] WebMouse Helper is ACTIVE and listening on port {server.port}.")
+            print("[*] Keep this Command Prompt window OPEN while using WebMouse.\n")
+            # Run forever
+            await asyncio.Future()
+    except OSError as e:
+        err_str = str(e).lower()
+        if "10048" in err_str or "already in use" in err_str or getattr(e, 'errno', 0) in (98, 48, 10048):
+            lan_ip = get_local_ip()
+            print("\n" + "=" * 62)
+            print(" [!] NOTICE: Port 8765 is already in use by a running process.")
+            print("=" * 62)
+            print(" WebMouse Helper is likely ALREADY RUNNING on this computer!")
+            print(f" Connect your phone to Laptop Wi-Fi IP: {lan_ip}  Port: 8765")
+            print(f" 6-Digit Pairing PIN: {server.pairing_code}")
+            print("\n If you wish to restart fresh:")
+            print(" 1. Open Task Manager and end any existing 'python.exe' tasks.")
+            print(" 2. Then start WebMouse again.")
+            print("=" * 62)
+            input("\nPress Enter to exit...")
+            return
+        else:
+            raise
 
 
 if __name__ == "__main__":
@@ -1691,11 +1722,18 @@ if __name__ == "__main__":
         sys.exit(0)
     except Exception as e:
         import traceback
-        print("\n" + "=" * 55)
+        print("\n" + "=" * 62)
         print(" [!] WebMouse Server encountered an error:")
-        print("=" * 55)
+        print("=" * 62)
         traceback.print_exc()
-        print("=" * 55)
-        print("Please check the error above.")
-        input("\nPress Enter to exit...")
-        sys.exit(1)
+        print("=" * 62)
+        print("Tip: If dependencies are missing, run: pip install websockets pyautogui")
+    finally:
+        print("\n========================================================")
+        print(" Command Prompt window kept open.")
+        print(" Press Enter to exit...")
+        print("========================================================")
+        try:
+            input()
+        except:
+            pass

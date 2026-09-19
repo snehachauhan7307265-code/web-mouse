@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Wifi, ShieldCheck, Monitor, HelpCircle, ArrowRight, CheckCircle2, AlertTriangle, RefreshCw, QrCode, Scan } from 'lucide-react';
+import { X, Wifi, ShieldCheck, Monitor, HelpCircle, ArrowRight, CheckCircle2, AlertTriangle, RefreshCw, QrCode, Scan, Terminal, KeyRound, Download } from 'lucide-react';
 import { ConnectionConfig, ConnectionStatus, ConnectedDeviceInfo } from '../types';
 import { QRScanner } from './QRScanner';
 import { QRCodePairing } from './QRCodePairing';
@@ -15,7 +15,7 @@ interface ConnectionModalProps {
   onDisconnect: () => void;
   onForgetDevice: () => void;
   onOpenHelperGuide: () => void;
-  initialView?: 'normal' | 'scanner' | 'qr_host';
+  initialView?: 'normal' | 'scanner' | 'qr_host' | 'manual_pin';
 }
 
 export const ConnectionModal: React.FC<ConnectionModalProps> = ({
@@ -56,8 +56,14 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       if (initialView === 'scanner') {
         setShowScanner(true);
         setShowQRHost(false);
+        setShowManual(false);
       } else if (initialView === 'qr_host') {
         fetchLocalHostAndShowQR();
+        setShowManual(false);
+      } else if (initialView === 'manual_pin') {
+        setShowScanner(false);
+        setShowQRHost(false);
+        setShowManual(true);
       } else {
         setShowScanner(false);
         setShowQRHost(false);
@@ -467,35 +473,48 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             <div className="space-y-4">
               <div className="flex flex-col gap-2.5">
                 <button
+                  id="btn-modal-enter-pin-cmd"
+                  type="button"
+                  onClick={() => setShowManual(true)}
+                  className="w-full py-3.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-semibold text-sm transition-all flex items-center justify-center gap-2.5 shadow-lg shadow-indigo-600/25"
+                >
+                  <Terminal className="w-5 h-5 text-indigo-200" />
+                  <span>⌨️ Enter 6-Digit PIN from CMD</span>
+                </button>
+
+                <button
+                  id="btn-modal-scan-qr"
                   type="button"
                   onClick={() => setShowScanner(true)}
-                  className="w-full py-4 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-semibold text-sm transition-all flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/25"
+                  className="w-full py-3 px-4 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 active:scale-[0.98] text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20"
                 >
-                  <Scan className="w-5 h-5" />
-                  <span>Scan QR Code to Pair Phone</span>
+                  <Scan className="w-4 h-4 text-emerald-100" />
+                  <span>Scan QR Code with Camera</span>
                 </button>
                 
                 <button
+                  id="btn-modal-host-pc-qr"
                   type="button"
                   onClick={fetchLocalHostAndShowQR}
-                  className="w-full py-3 px-4 rounded-xl bg-zinc-950 hover:bg-zinc-900 active:scale-[0.98] text-zinc-300 font-medium text-sm transition-all flex items-center justify-center gap-2 border border-zinc-800"
+                  className="w-full py-2.5 px-4 rounded-xl bg-zinc-950 hover:bg-zinc-900 active:scale-[0.98] text-zinc-300 font-medium text-xs transition-all flex items-center justify-center gap-2 border border-zinc-800"
                 >
                   <QrCode className="w-4 h-4 text-indigo-400" />
-                  <span>I am the Host PC - Show QR</span>
+                  <span>I am on Laptop — Show QR & Helper</span>
                 </button>
               </div>
             </div>
           )}
 
-          {/* Advanced / Manual Connection Fallback */}
+          {/* Manual Connection / CMD Code Entry Section */}
           <div className="pt-2">
             <div 
               className="flex items-center gap-3 text-zinc-500 cursor-pointer hover:text-zinc-300 transition-colors py-1" 
               onClick={() => setShowManual(!showManual)}
             >
               <div className="flex-1 h-px bg-zinc-800" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                Advanced / Manual Connection
+              <span className="text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5 text-indigo-400">
+                <Terminal className="w-3.5 h-3.5" />
+                CMD Code Entry & Manual Setup
                 <ArrowRight className={`w-3 h-3 transition-transform duration-200 ${showManual ? 'rotate-90' : ''}`} />
               </span>
               <div className="flex-1 h-px bg-zinc-800" />
@@ -503,11 +522,35 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
             {showManual && (
               <form onSubmit={handleConnect} className="space-y-3.5 animate-in slide-in-from-top-2 fade-in duration-200 pt-2">
+                {/* CMD terminal helper banner */}
+                <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-left space-y-1.5 shadow-inner">
+                  <div className="flex items-center justify-between text-[11px] text-emerald-400 font-semibold font-mono">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      CMD WINDOW ON LAPTOP
+                    </span>
+                    <span className="text-zinc-500 text-[10px] font-sans">PORT 8765</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-300 leading-snug">
+                    अपने लैपटॉप की काली CMD स्क्रीन देखें — वहाँ <strong className="text-white">LAPTOP WI-FI IP</strong> और <strong className="text-emerald-300">6-DIGIT PIN</strong> लिखा हुआ है:
+                  </p>
+                  <div className="pt-1">
+                    <a
+                      href="/run_webmouse.bat"
+                      download="run_webmouse.bat"
+                      className="w-full py-1.5 px-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-850 text-indigo-300 text-[11px] flex items-center justify-center gap-1.5 border border-zinc-700/60 transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Laptop par CMD nahi khula? Click to download run_webmouse.bat</span>
+                    </a>
+                  </div>
+                </div>
+
                 {/* IP Address & Port */}
                 <div className="grid grid-cols-3 gap-2.5">
                   <div className="col-span-2 space-y-1.5">
                     <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
-                      <span>Local IP Address</span>
+                      <span>Laptop Wi-Fi IP</span>
                       <button
                         type="button"
                         onClick={onOpenHelperGuide}
@@ -521,9 +564,9 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                       type="text"
                       value={host}
                       onChange={(e) => setHost(e.target.value)}
-                      placeholder="e.g. 192.168.1.5"
+                      placeholder="e.g. 192.168.1.15"
                       disabled={isConnected}
-                      className="w-full bg-zinc-950/80 border border-zinc-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                      className="w-full bg-zinc-950/80 border border-zinc-700 rounded-xl px-3.5 py-2.5 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
                       required
                     />
                   </div>
@@ -545,12 +588,12 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                 {/* 6-Digit Pairing Code */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
-                    <span>Pairing Code (6 Digits)</span>
-                    <span className="text-[11px] text-zinc-400">Printed in PC terminal</span>
+                    <span>6-Digit Pairing PIN (from CMD)</span>
+                    <span className="text-[11px] text-emerald-400 font-semibold">CMD me dikh raha code</span>
                   </label>
                   <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500">
-                      <ShieldCheck className="w-4 h-4" />
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
+                      <KeyRound className="w-4 h-4 text-indigo-400" />
                     </div>
                     <input
                       id="input-pairing-code"
@@ -558,9 +601,10 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                       maxLength={6}
                       value={code}
                       onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                      placeholder="e.g. 483921"
+                      placeholder="e.g. 582914"
                       disabled={isConnected}
-                      className="w-full bg-zinc-950/80 border border-zinc-700 rounded-xl pl-9 pr-3.5 py-2.5 text-base font-mono tracking-widest text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                      className="w-full bg-zinc-950/80 border border-zinc-700 rounded-xl pl-10 pr-3.5 py-3 text-lg font-mono tracking-widest text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                      required
                     />
                   </div>
                 </div>
