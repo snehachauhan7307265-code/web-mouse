@@ -117,8 +117,9 @@ class WebMouseServer:
 
                 if msg_type == "auth":
                     code = str(data.get("code", "")).strip()
+                    token = str(data.get("token", "")).strip()
                     device_name = str(data.get("deviceName", "Phone")).strip()
-                    if code == self.pairing_code:
+                    if code == self.pairing_code or token == self.pairing_code:
                         self.authenticated_clients.add(websocket)
                         self.client_info[websocket] = f"{device_name} ({client_addr})"
                         print(f"AUTHENTICATED: '{device_name}' from {client_addr} paired successfully.")

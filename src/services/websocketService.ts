@@ -120,11 +120,14 @@ export class WebSocketClient {
 
       this.socket.onopen = () => {
         this.addLog('sys', `Connected to ${wsUrl}. Sending authentication handshake...`);
+        const codeToSend = (this.config.code?.trim() || (this.config.qrToken && this.config.qrToken.length <= 8 ? this.config.qrToken : '') || '').trim();
+        const tokenToSend = this.config.qrToken || this.config.token || codeToSend;
+
         // Step 1: Send authentication handshake with token or 6-digit code
         this.send({
           type: 'auth',
-          code: this.config.code?.trim() || '',
-          token: this.config.qrToken || this.config.token,
+          code: codeToSend,
+          token: tokenToSend,
           deviceName: this.deviceName || 'WebMouse Phone',
         });
       };

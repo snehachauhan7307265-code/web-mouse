@@ -360,10 +360,10 @@ class SystemTrayManager:
         try:
             import secrets, time
             temp_token = secrets.token_hex(16)
-            expires_at = time.time() + 60
+            expires_at = time.time() + 300
             self.server.qr_tokens[temp_token] = expires_at
             current_lan_ip = get_local_ip()
-            pair_url = f"http://{current_lan_ip}:{self.server.port}/pair?token={temp_token}"
+            pair_url = f"http://{current_lan_ip}:{self.server.port}/pair?token={temp_token}&code={self.server.pairing_code}"
 
             root = tk.Tk()
             root.title("WebMouse — Scan QR with Phone")
@@ -401,7 +401,7 @@ class SystemTrayManager:
             render_qr(pair_url)
 
             # Countdown & Status
-            status_var = tk.StringVar(value="⏳ Token expires in 60s")
+            status_var = tk.StringVar(value="⏳ Token valid for 5 min")
             status_label = tk.Label(root, textvariable=status_var, font=("Segoe UI", 10, "bold"), fg="#34d399", bg="#09090b")
             status_label.pack(pady=(12, 6))
 
@@ -414,11 +414,11 @@ class SystemTrayManager:
             def refresh_token():
                 nonlocal temp_token, expires_at, pair_url
                 temp_token = secrets.token_hex(16)
-                expires_at = time.time() + 60
+                expires_at = time.time() + 300
                 self.server.qr_tokens[temp_token] = expires_at
-                pair_url = f"http://{current_lan_ip}:{self.server.port}/pair?token={temp_token}"
+                pair_url = f"http://{current_lan_ip}:{self.server.port}/pair?token={temp_token}&code={self.server.pairing_code}"
                 render_qr(pair_url)
-                status_var.set("⏳ Token expires in 60s")
+                status_var.set("⏳ Token valid for 5 min")
                 status_label.config(fg="#34d399")
 
             btn_refresh = tk.Button(btn_frame, text="🔄 New QR", command=refresh_token, font=("Segoe UI", 9, "bold"), fg="#ffffff", bg="#27272a", activebackground="#3f3f46", activeforeground="#fff", bd=0, padx=12, pady=6)
@@ -720,11 +720,11 @@ class WebMouseServer:
             # 2. Local Pairing API endpoint for host browser (CORS allowed for localhost & local network)
             if req_path in ("/api/pairing-info", "/api/info", "/info"):
                 temp_token = secrets.token_hex(16)
-                expires_at = time.time() + 60
+                expires_at = time.time() + 300
                 self.qr_tokens[temp_token] = expires_at
 
                 current_lan_ip = get_local_ip()
-                pair_url = f"http://{current_lan_ip}:{self.port}/pair?token={temp_token}"
+                pair_url = f"http://{current_lan_ip}:{self.port}/pair?token={temp_token}&code={self.pairing_code}"
 
                 data = {
                     "type": "host_pairing_info",
@@ -734,6 +734,7 @@ class WebMouseServer:
                     "version": 2,
                     "token": temp_token,
                     "pairingToken": temp_token,
+                    "code": self.pairing_code,
                     "expiresAt": int(expires_at),
                     "pairUrl": pair_url
                 }
@@ -742,12 +743,22 @@ class WebMouseServer:
             # 3. Mobile Phone QR Pairing Gateway: GET /pair?token=<TOKEN>
             if req_path == "/pair":
                 token_list = query_params.get("token", [])
+                code_list = query_params.get("code", [])
                 token = token_list[0].strip() if token_list else ""
+                code = code_list[0].strip() if code_list else ""
                 current_time = time.time()
                 current_lan_ip = get_local_ip()
 
-                # Validate token
+                # Validate token or code
+                is_valid = False
                 if token and token in self.qr_tokens and self.qr_tokens[token] > current_time:
+                    is_valid = True
+                elif token and token == self.pairing_code:
+                    is_valid = True
+                elif code and code == self.pairing_code:
+                    is_valid = True
+
+                if is_valid:
                     new_trusted_token = secrets.token_hex(32)
                     self.trusted_tokens[new_trusted_token] = {
                         "device_name": "Mobile Phone (QR)",
@@ -755,7 +766,6 @@ class WebMouseServer:
                         "method": "qr_gateway"
                     }
                     self._save_trusted_tokens()
-                    del self.qr_tokens[token] # One-time token consumed!
                     print(f"\n[+] QR GATEWAY PAIRING SUCCESS: Phone paired via HTTP gateway! Issued trusted token.")
 
                     html = f"""<!DOCTYPE html>
@@ -1091,7 +1101,7 @@ class WebMouseServer:
                             print(f"AUTHENTICATED: '{device_name}' from {client_addr} paired successfully via QR one-time token.")
                         else:
                             print(f"AUTH FAILED: Expired QR token from {client_addr}")
-                    elif code == self.pairing_code:
+                    elif code == self.pairing_code or token == self.pairing_code:
                         is_authenticated = True
                         import secrets
                         new_token = secrets.token_hex(32)

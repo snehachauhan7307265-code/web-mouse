@@ -78,6 +78,18 @@ export function QRCodePairing({
     );
   };
 
+  React.useEffect(() => {
+    if (host && !isInvalidHost(host)) {
+      setManualIp(host.trim());
+    }
+  }, [host]);
+
+  React.useEffect(() => {
+    if (token) {
+      setManualCode(token.trim());
+    }
+  }, [token]);
+
   const isHostValid = helperStatus === 'connected' && host && !isInvalidHost(host);
 
   // QR Payload: When helper is connected use authoritative token, otherwise use manual/detected host
@@ -85,8 +97,9 @@ export function QRCodePairing({
   const effectivePort = isHostValid ? port : (port || 8765);
   const effectiveToken = isHostValid ? (token || '') : manualCode.trim();
 
+  // Universal QR Payload containing host, port, token, code, and protocol version
   const qrPayload = effectiveHost
-    ? `http://${effectiveHost}:${effectivePort}/pair?token=${encodeURIComponent(effectiveToken)}&type=webmouse-pair&v=2&exp=${expiresAt || ''}`
+    ? `http://${effectiveHost}:${effectivePort}/pair?token=${encodeURIComponent(effectiveToken)}&code=${encodeURIComponent(effectiveToken)}&type=webmouse-pair&v=2`
     : '';
 
   const isCloudPreview = typeof window !== 'undefined' && (

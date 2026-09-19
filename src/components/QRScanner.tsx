@@ -83,69 +83,72 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
       (decodedText) => {
         try {
           let pairData: any = null;
+          const trimmed = (decodedText || '').trim();
 
-          // Check if QR contains an HTTP pairing URL (e.g. http://192.168.1.5:8765/pair?token=...)
-          if (decodedText.startsWith('http://') || decodedText.startsWith('https://')) {
+          // 1. Check for URL format (http://, https://, ws://, or embedded in text)
+          const urlMatch = trimmed.match(/(https?:\/\/[^\s"'<>]+|ws:\/\/[^\s"'<>]+)/i);
+          if (urlMatch) {
             try {
-              const url = new URL(decodedText);
-              if (url.pathname.includes('pair')) {
-                const token = url.searchParams.get('token');
-                const exp = url.searchParams.get('exp');
-                const typeParam = url.searchParams.get('type');
-                const verParam = url.searchParams.get('v');
-                
-                if (token) {
-                  pairData = {
-                    type: typeParam || 'webmouse-pair',
-                    version: verParam ? parseInt(verParam, 10) : 2,
-                    host: url.hostname,
-                    port: parseInt(url.port, 10) || 8765,
-                    token: token,
-                    expiresAt: exp ? parseInt(exp, 10) : undefined
-                  };
-                }
-              }
+              const urlStr = urlMatch[1].replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
+              const url = new URL(urlStr);
+              const tokenParam = url.searchParams.get('token');
+              const codeParam = url.searchParams.get('code');
+              const typeParam = url.searchParams.get('type');
+              const verParam = url.searchParams.get('v');
+              const expParam = url.searchParams.get('exp');
+
+              pairData = {
+                type: typeParam || 'webmouse-pair',
+                version: verParam ? parseInt(verParam, 10) : 2,
+                host: url.hostname,
+                port: parseInt(url.port, 10) || 8765,
+                token: tokenParam || codeParam || undefined,
+                code: codeParam || (tokenParam && tokenParam.length <= 8 ? tokenParam : undefined),
+                expiresAt: expParam ? parseInt(expParam, 10) : undefined,
+              };
             } catch (urlErr) {
               console.warn("Failed to parse QR as URL", urlErr);
             }
           }
 
-          // If not URL, parse as JSON payload
-          if (!pairData) {
+          // 2. If not URL, try JSON payload
+          if (!pairData && trimmed.startsWith('{') && trimmed.endsWith('}')) {
             try {
-              const parsed = JSON.parse(decodedText);
+              const parsed = JSON.parse(trimmed);
               if (parsed && typeof parsed === 'object') {
-                pairData = parsed;
+                pairData = {
+                  type: parsed.type || 'webmouse-pair',
+                  version: parsed.version || parsed.v || 2,
+                  host: parsed.host || parsed.ip,
+                  port: parseInt(parsed.port, 10) || 8765,
+                  token: parsed.token || parsed.qrToken,
+                  code: parsed.code || (parsed.token && String(parsed.token).length <= 8 ? String(parsed.token) : undefined),
+                  expiresAt: parsed.expiresAt ? parseInt(parsed.expiresAt, 10) : undefined,
+                };
               }
             } catch (jsonErr) {
               // Not JSON
             }
           }
 
+          // 3. Check for plain IP:Port or IP format (e.g. 192.168.1.5:8765 or 192.168.1.5)
           if (!pairData) {
-            setError("Invalid QR Code: Not a valid WebMouse pairing code.");
-            return;
-          }
-
-          // 1. Validate type
-          if (pairData.type && pairData.type !== 'webmouse-pair') {
-            setError("Invalid QR Code: Not a WebMouse pairing code.");
-            return;
-          }
-
-          // 2. Validate version
-          if (pairData.version && pairData.version > 2) {
-            setError("Unsupported WebMouse QR version. Please update WebMouse.");
-            return;
-          }
-
-          // 3. Check expiration
-          if (pairData.expiresAt) {
-            const now = Math.floor(Date.now() / 1000);
-            if (now > pairData.expiresAt) {
-              setError("This QR code has expired. Click 'Generate New QR' on your laptop.");
-              return;
+            const ipPortMatch = trimmed.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::(\d{1,5}))?$/);
+            if (ipPortMatch) {
+              pairData = {
+                type: 'webmouse-pair',
+                version: 2,
+                host: ipPortMatch[1],
+                port: ipPortMatch[2] ? parseInt(ipPortMatch[2], 10) : 8765,
+                token: undefined,
+                code: undefined,
+              };
             }
+          }
+
+          if (!pairData) {
+            setError("Invalid QR Code: WebMouse pairing info not found.");
+            return;
           }
 
           // 4. Validate host
@@ -163,14 +166,17 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
             hostLower.includes('.vercel.app') ||
             hostLower.includes('google')
           ) {
-            setError("Invalid host in QR: Cannot connect to localhost or cloud preview from phone. Start the Windows Helper on your laptop to generate a local Wi-Fi QR.");
+            setError("Invalid host in QR: Cannot connect to 'localhost' from phone. Please make sure the laptop's Wi-Fi IP (e.g. 192.168.x.x) is used.");
             return;
           }
 
-          // 5. Validate token
-          if (!pairData.token) {
-            setError("QR Code is missing security token.");
-            return;
+          // 5. Check expiration with generous leeway (5 minutes) for device clock skew
+          if (pairData.expiresAt) {
+            const now = Math.floor(Date.now() / 1000);
+            if (now > pairData.expiresAt + 300) {
+              setError("This QR code has expired. Please refresh the QR code on your laptop.");
+              return;
+            }
           }
 
           safelyStopScanner().finally(() => {

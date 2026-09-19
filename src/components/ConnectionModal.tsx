@@ -81,22 +81,28 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
   const handleScan = (data: any) => {
     setShowScanner(false);
-    if (data.host) setHost(data.host);
-    if (data.port) setPort(data.port.toString());
-    
-    if (data.token) {
-      // Auto-connect with one-time token from QR
+    const scannedHost = (data.host || '').trim();
+    const scannedPort = parseInt(data.port, 10) || 8765;
+    const scannedCode = (data.code || (data.token && String(data.token).length <= 8 ? data.token : '') || '').trim();
+    const scannedToken = (data.token || data.qrToken || '').trim();
+
+    if (scannedHost) setHost(scannedHost);
+    if (scannedPort) setPort(scannedPort.toString());
+    if (scannedCode) setCode(scannedCode);
+
+    if (scannedHost) {
+      // Auto-connect with credentials from QR
       onSaveAndConnect({
-        host: data.host,
-        port: parseInt(data.port, 10) || 8765,
-        code: '', // Not needed for QR
-        qrToken: data.token,
-        token: undefined, // Clear old token until server grants new permanent token
-        lastComputerName: 'My Laptop',
+        host: scannedHost,
+        port: scannedPort,
+        code: scannedCode || scannedToken, // Keep code populated so password-only and token servers both work!
+        qrToken: scannedToken,
+        token: undefined, // Clear old token until server grants fresh permanent token
+        lastComputerName: data.computerName || 'My Laptop',
         autoReconnect: true, // Always auto-reconnect on successful scan
       });
       onClose();
-    } else if (!code) {
+    } else if (!code && !scannedCode) {
       setTimeout(() => document.getElementById('input-pairing-code')?.focus(), 100);
     }
   };
@@ -257,9 +263,9 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       {showQRHost && (
         <QRCodePairing 
           helperStatus={helperStatus}
-          host={qrHostIp || config.host || ''} 
-          port={qrHostPort || config.port || 8765} 
-          token={qrToken || config.code || ''} 
+          host={qrHostIp || host || config.host || ''} 
+          port={qrHostPort || parseInt(port, 10) || config.port || 8765} 
+          token={qrToken || code || config.code || ''} 
           expiresAt={qrExpiresAt} 
           errorMessage={helperError}
           onRefresh={fetchLocalHostAndShowQR}
