@@ -84,50 +84,55 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
         try {
           let pairData: any = null;
           const trimmed = (decodedText || '').trim();
+          console.log('[WebMouse] phone scanned QR raw text:', trimmed);
 
-          // 1. Check for URL format (http://, https://, ws://, or embedded in text)
-          const urlMatch = trimmed.match(/(https?:\/\/[^\s"'<>]+|ws:\/\/[^\s"'<>]+)/i);
-          if (urlMatch) {
-            try {
-              const urlStr = urlMatch[1].replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
-              const url = new URL(urlStr);
-              const tokenParam = url.searchParams.get('token');
-              const codeParam = url.searchParams.get('code');
-              const typeParam = url.searchParams.get('type');
-              const verParam = url.searchParams.get('v');
-              const expParam = url.searchParams.get('exp');
-
-              pairData = {
-                type: typeParam || 'webmouse-pair',
-                version: verParam ? parseInt(verParam, 10) : 2,
-                host: url.hostname,
-                port: parseInt(url.port, 10) || 8765,
-                token: tokenParam || codeParam || undefined,
-                code: codeParam || (tokenParam && tokenParam.length <= 8 ? tokenParam : undefined),
-                expiresAt: expParam ? parseInt(expParam, 10) : undefined,
-              };
-            } catch (urlErr) {
-              console.warn("Failed to parse QR as URL", urlErr);
-            }
-          }
-
-          // 2. If not URL, try JSON payload
-          if (!pairData && trimmed.startsWith('{') && trimmed.endsWith('}')) {
+          // 1. Primary: JSON payload (Requirement 5)
+          if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
             try {
               const parsed = JSON.parse(trimmed);
               if (parsed && typeof parsed === 'object') {
                 pairData = {
-                  type: parsed.type || 'webmouse-pair',
-                  version: parsed.version || parsed.v || 2,
-                  host: parsed.host || parsed.ip,
+                  type: parsed.type || 'webmouse_pair',
+                  version: parsed.version || parsed.v || 1,
+                  host: (parsed.host || parsed.ip || '').trim(),
                   port: parseInt(parsed.port, 10) || 8765,
-                  token: parsed.token || parsed.qrToken,
-                  code: parsed.code || (parsed.token && String(parsed.token).length <= 8 ? String(parsed.token) : undefined),
+                  token: (parsed.token || parsed.qrToken || '').trim() || undefined,
+                  code: (parsed.code || (parsed.token && String(parsed.token).length <= 8 ? String(parsed.token) : '') || '').trim() || undefined,
                   expiresAt: parsed.expiresAt ? parseInt(parsed.expiresAt, 10) : undefined,
                 };
+                console.log('[WebMouse] phone parsed JSON QR payload:', pairData);
               }
             } catch (jsonErr) {
-              // Not JSON
+              console.warn('[WebMouse] JSON QR parse error:', jsonErr);
+            }
+          }
+
+          // 2. Check for URL format fallback
+          if (!pairData) {
+            const urlMatch = trimmed.match(/(https?:\/\/[^\s"'<>]+|ws:\/\/[^\s"'<>]+)/i);
+            if (urlMatch) {
+              try {
+                const urlStr = urlMatch[1].replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
+                const url = new URL(urlStr);
+                const tokenParam = url.searchParams.get('token');
+                const codeParam = url.searchParams.get('code');
+                const typeParam = url.searchParams.get('type');
+                const verParam = url.searchParams.get('v');
+                const expParam = url.searchParams.get('exp') || url.searchParams.get('expiresAt');
+
+                pairData = {
+                  type: typeParam || 'webmouse_pair',
+                  version: verParam ? parseInt(verParam, 10) : 1,
+                  host: url.hostname.trim(),
+                  port: parseInt(url.port, 10) || 8765,
+                  token: (tokenParam || codeParam || '').trim() || undefined,
+                  code: (codeParam || (tokenParam && tokenParam.length <= 8 ? tokenParam : '') || '').trim() || undefined,
+                  expiresAt: expParam ? parseInt(expParam, 10) : undefined,
+                };
+                console.log('[WebMouse] phone parsed URL QR payload:', pairData);
+              } catch (urlErr) {
+                console.warn('[WebMouse] URL QR parse error:', urlErr);
+              }
             }
           }
 
@@ -136,9 +141,9 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
             const ipPortMatch = trimmed.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::(\d{1,5}))?$/);
             if (ipPortMatch) {
               pairData = {
-                type: 'webmouse-pair',
-                version: 2,
-                host: ipPortMatch[1],
+                type: 'webmouse_pair',
+                version: 1,
+                host: ipPortMatch[1].trim(),
                 port: ipPortMatch[2] ? parseInt(ipPortMatch[2], 10) : 8765,
                 token: undefined,
                 code: undefined,
@@ -147,13 +152,17 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
           }
 
           if (!pairData) {
-            setError("Invalid QR Code: WebMouse pairing info not found.");
+            const failReason = "Invalid QR Code: WebMouse pairing info not found.";
+            console.warn('[WebMouse] connection failure reason:', failReason);
+            setError(failReason);
             return;
           }
 
           // 4. Validate host
           if (!pairData.host) {
-            setError("QR Code is missing computer IP address.");
+            const failReason = "QR Code is missing computer IP address.";
+            console.warn('[WebMouse] connection failure reason:', failReason);
+            setError(failReason);
             return;
           }
 
@@ -166,18 +175,24 @@ export function QRScanner({ onScan, onClose }: QRScannerProps) {
             hostLower.includes('.vercel.app') ||
             hostLower.includes('google')
           ) {
-            setError("Invalid host in QR: Cannot connect to 'localhost' from phone. Please make sure the laptop's Wi-Fi IP (e.g. 192.168.x.x) is used.");
+            const failReason = "Invalid host in QR: Cannot connect to 'localhost' from phone. Please make sure the laptop's Wi-Fi IP (e.g. 192.168.x.x) is used.";
+            console.warn('[WebMouse] connection failure reason:', failReason);
+            setError(failReason);
             return;
           }
 
-          // 5. Check expiration with generous leeway (5 minutes) for device clock skew
+          // 5. Check token expiration
           if (pairData.expiresAt) {
             const now = Math.floor(Date.now() / 1000);
-            if (now > pairData.expiresAt + 300) {
-              setError("This QR code has expired. Please refresh the QR code on your laptop.");
+            if (now > pairData.expiresAt + 60) {
+              const failReason = "This QR code has expired. Please refresh the QR code on your laptop.";
+              console.warn('[WebMouse] connection failure reason:', failReason);
+              setError(failReason);
               return;
             }
           }
+
+          console.log('[WebMouse] token validation successful on phone. Initiating connection to:', pairData.host + ':' + pairData.port);
 
           safelyStopScanner().finally(() => {
             if (isMounted) onScan(pairData);

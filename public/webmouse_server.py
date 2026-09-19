@@ -302,8 +302,11 @@ def get_local_ip() -> str:
     if valid_ips:
         # Sort descending by priority score
         valid_ips.sort(key=ip_score, reverse=True)
-        return valid_ips[0]
+        primary_lan_ip = valid_ips[0]
+        print(f"[DEBUG] detected LAN IP: {primary_lan_ip}")
+        return primary_lan_ip
 
+    print("[DEBUG] detected LAN IP: 127.0.0.1 (No active private LAN detected)")
     return "127.0.0.1"
 
 
@@ -826,10 +829,23 @@ class WebMouseServer:
             # 2. Local Pairing API endpoint for host browser (CORS allowed for localhost & local network)
             if req_path in ("/api/pairing-info", "/api/info", "/info"):
                 temp_token = secrets.token_hex(16)
-                expires_at = time.time() + 300
+                expires_at = int(time.time() + 60) # 60 seconds one-time temporary token
                 self.qr_tokens[temp_token] = expires_at
 
                 current_lan_ip = get_local_ip()
+                qr_payload = {
+                    "type": "webmouse_pair",
+                    "version": 1,
+                    "host": current_lan_ip,
+                    "port": self.port,
+                    "token": temp_token,
+                    "expiresAt": expires_at
+                }
+
+                print(f"[DEBUG] QR generated: host={current_lan_ip}:{self.port}, token={temp_token[:8]}..., expires_at={expires_at}")
+                print(f"[DEBUG] QR payload: {json.dumps(qr_payload)}")
+                print(f"[DEBUG] detected LAN IP: {current_lan_ip}")
+
                 pair_url = f"http://{current_lan_ip}:{self.port}/pair?token={temp_token}&code={self.pairing_code}"
 
                 data = {
@@ -837,11 +853,12 @@ class WebMouseServer:
                     "host": current_lan_ip,
                     "ip": current_lan_ip,
                     "port": self.port,
-                    "version": 2,
+                    "version": 1,
                     "token": temp_token,
                     "pairingToken": temp_token,
                     "code": self.pairing_code,
-                    "expiresAt": int(expires_at),
+                    "expiresAt": expires_at,
+                    "qrPayload": qr_payload,
                     "pairUrl": pair_url
                 }
                 return send_http(200, "application/json", json.dumps(data))
@@ -1164,22 +1181,35 @@ class WebMouseServer:
                 msg_type = data.get("type", "")
 
                 # 0. Request fresh pairing info / QR token from Host PC
-                if msg_type in ("host_pairing_info", "request_qr_token"):
+                if msg_type in ("host_pairing_info", "request_qr_token", "get_pairing_info"):
                     import time, secrets
                     temp_token = secrets.token_hex(16)
-                    expires_at = time.time() + 60
+                    expires_at = int(time.time() + 60)
                     self.qr_tokens[temp_token] = expires_at
                     current_lan_ip = get_local_ip()
-                    print(f"PAIRING: Issued token to {client_addr} for ws://{current_lan_ip}:{self.port} (expires in 60s)")
+                    qr_payload = {
+                        "type": "webmouse_pair",
+                        "version": 1,
+                        "host": current_lan_ip,
+                        "port": self.port,
+                        "token": temp_token,
+                        "expiresAt": expires_at
+                    }
+                    print(f"[DEBUG] helper connection: host browser requested pairing info via WebSocket")
+                    print(f"[DEBUG] QR generated: host={current_lan_ip}:{self.port}, token={temp_token[:8]}..., expires_at={expires_at}")
+                    print(f"[DEBUG] QR payload: {json.dumps(qr_payload)}")
+                    print(f"[DEBUG] detected LAN IP: {current_lan_ip}")
                     await websocket.send(json.dumps({
                         "type": "host_pairing_info",
                         "host": current_lan_ip,
                         "ip": current_lan_ip,
                         "port": self.port,
-                        "version": 2,
+                        "version": 1,
                         "token": temp_token,
                         "pairingToken": temp_token,
-                        "expiresAt": int(expires_at)
+                        "code": self.pairing_code,
+                        "expiresAt": expires_at,
+                        "qrPayload": qr_payload
                     }))
                     continue
 
@@ -1189,31 +1219,43 @@ class WebMouseServer:
                     token = str(data.get("token", "")).strip()
                     device_name = str(data.get("deviceName", "Mobile Phone")).strip()
 
+                    print(f"[DEBUG] phone pairing request from {client_addr}: device='{device_name}', has_token={bool(token)}, has_code={bool(code)}")
+                    print(f"[DEBUG] token validation: checking incoming credentials...")
+
                     is_authenticated = False
                     new_token = None
+                    fail_reason = ""
 
                     if token and token in self.trusted_tokens:
                         is_authenticated = True
-                        print(f"AUTHENTICATED: '{device_name}' from {client_addr} auto-reconnected via trusted token.")
+                        print(f"[DEBUG] token validation: trusted device token matched! Reconnected '{device_name}' from {client_addr}")
                     elif token and token in self.qr_tokens:
                         import time
                         if self.qr_tokens[token] > time.time():
                             is_authenticated = True
                             import secrets
                             new_token = secrets.token_hex(32)
-                            self.trusted_tokens[new_token] = {"device_name": device_name, "paired_at": str(Path.home())}
+                            self.trusted_tokens[new_token] = {"device_name": device_name, "paired_at": str(time.time()), "method": "qr"}
                             self._save_trusted_tokens()
-                            del self.qr_tokens[token] # Use once
-                            print(f"AUTHENTICATED: '{device_name}' from {client_addr} paired successfully via QR one-time token.")
+                            del self.qr_tokens[token] # One-time use: invalid after successful pairing
+                            print(f"[DEBUG] token validation: valid 60s temporary QR token!")
+                            print(f"[DEBUG] successful pairing: generated persistent trusted token for '{device_name}'")
                         else:
-                            print(f"AUTH FAILED: Expired QR token from {client_addr}")
-                    elif code == self.pairing_code or token == self.pairing_code:
+                            fail_reason = "Expired temporary QR token"
+                            print(f"[DEBUG] token validation: {fail_reason}")
+                    elif code and code == self.pairing_code:
                         is_authenticated = True
                         import secrets
                         new_token = secrets.token_hex(32)
-                        self.trusted_tokens[new_token] = {"device_name": device_name, "paired_at": str(Path.home())}
+                        self.trusted_tokens[new_token] = {"device_name": device_name, "paired_at": str(time.time()), "method": "manual_code"}
                         self._save_trusted_tokens()
-                        print(f"AUTHENTICATED: '{device_name}' from {client_addr} paired successfully via code.")
+                        print(f"[DEBUG] token validation: 6-digit pairing code matched!")
+                        print(f"[DEBUG] successful pairing: generated persistent trusted token for '{device_name}'")
+                    else:
+                        fail_reason = "Invalid token or incorrect pairing code"
+                        print(f"[DEBUG] token validation: {fail_reason}")
+
+                    print(f"[DEBUG] WebSocket authentication: client authenticated = {is_authenticated}")
 
                     if is_authenticated:
                         self.authenticated_clients.add(websocket)
@@ -1225,6 +1267,8 @@ class WebMouseServer:
                             except Exception:
                                 pass
                         
+                        print(f"[DEBUG] successful pairing: '{device_name}' from {client_addr} connected to Windows cursor!")
+
                         response = {
                             "type": "auth_result",
                             "success": True,
@@ -1238,11 +1282,11 @@ class WebMouseServer:
                             
                         await websocket.send(json.dumps(response))
                     else:
-                        print(f"AUTH FAILED: Invalid token or code from {client_addr}")
+                        print(f"[DEBUG] connection failure reason: {fail_reason} from {client_addr}")
                         await websocket.send(json.dumps({
                             "type": "auth_result",
                             "success": False,
-                            "message": "Incorrect pairing code or expired session"
+                            "message": f"Authentication failed: {fail_reason}"
                         }))
                     continue
 

@@ -55,10 +55,12 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         <div className="w-full p-5 rounded-3xl bg-emerald-950/30 border border-emerald-500/40 flex flex-col items-center justify-center text-center shadow-lg shadow-emerald-950/20 animate-in fade-in duration-200">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-semibold mb-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>🟢 Connected</span>
+            <span>🟢 Connected to {computerName}</span>
           </div>
           <h2 className="text-xl font-bold text-white tracking-tight">{computerName}</h2>
-          <p className="text-xs text-emerald-300/90 font-medium mt-0.5">WebMouse Ready</p>
+          <p className="text-xs text-emerald-300/90 font-medium mt-0.5 font-mono">
+            {deviceInfo?.ip}:{deviceInfo?.port || 8765}
+          </p>
           
           <div className="flex items-center gap-3 mt-4 pt-3 border-t border-emerald-500/20 w-full justify-between text-xs">
             <span className="text-zinc-400 font-mono">
@@ -70,6 +72,16 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             >
               Disconnect
             </button>
+          </div>
+        </div>
+      ) : status === 'connecting' ? (
+        <div className="w-full p-4 rounded-2xl bg-blue-950/30 border border-blue-500/40 flex items-center justify-between shadow-lg shadow-blue-950/20">
+          <div className="flex items-center gap-3">
+            <RefreshCw className="w-4 h-4 text-blue-400 animate-spin" />
+            <div>
+              <span className="text-xs font-semibold text-blue-400">Connecting to {pairedDevice?.ip || 'Laptop'}:8765...</span>
+              <p className="text-[11px] text-zinc-400">Authenticating with Windows Helper...</p>
+            </div>
           </div>
         </div>
       ) : isConnecting ? (
@@ -99,14 +111,41 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             )}
           </div>
         </div>
+      ) : status === 'auth_failed' ? (
+        <div className="w-full p-4 rounded-2xl bg-rose-950/30 border border-rose-500/40 space-y-3 shadow-lg">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="text-sm font-bold text-rose-300">Authentication Failed</h3>
+              <p className="text-xs text-zinc-300 mt-0.5">
+                {deviceInfo?.errorMessage || 'Invalid pairing code or expired QR token. Scan a fresh QR code on your laptop.'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={() => onOpenConnectionModal?.('scanner')}
+              className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-md transition-all"
+            >
+              <Scan className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Scan New QR</span>
+            </button>
+            <button
+              onClick={onReconnect}
+              className="py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium text-xs transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
       ) : status === 'error' || pairedDevice ? (
         <div className="w-full p-4 rounded-2xl bg-zinc-900/90 border border-amber-500/30 space-y-3 shadow-lg">
           <div className="flex items-start gap-2.5">
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-sm font-bold text-white">Computer not found</h3>
+              <h3 className="text-sm font-bold text-white">Connection Failed</h3>
               <p className="text-xs text-zinc-400 mt-0.5">
-                Could not reach <strong className="text-zinc-200">{computerName}</strong>. If your laptop&apos;s IP address changed, scan a new QR.
+                Could not reach <strong className="text-zinc-200">{computerName}</strong> on port 8765. Ensure laptop and phone are on the same Wi-Fi.
               </p>
             </div>
           </div>

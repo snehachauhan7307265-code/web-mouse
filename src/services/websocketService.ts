@@ -123,6 +123,13 @@ export class WebSocketClient {
         const codeToSend = (this.config.code?.trim() || (this.config.qrToken && this.config.qrToken.length <= 8 ? this.config.qrToken : '') || '').trim();
         const tokenToSend = this.config.qrToken || this.config.token || codeToSend;
 
+        console.log('[WebMouse] helper connection: WebSocket opened to', wsUrl);
+        console.log('[WebMouse] WebSocket authentication: sending auth packet...', {
+          deviceName: this.deviceName || 'WebMouse Phone',
+          hasToken: Boolean(tokenToSend),
+          hasCode: Boolean(codeToSend)
+        });
+
         // Step 1: Send authentication handshake with token or 6-digit code
         this.send({
           type: 'auth',
@@ -142,6 +149,8 @@ export class WebSocketClient {
       };
 
       this.socket.onerror = (_err) => {
+        const errReason = `Phone cannot reach Windows Helper at ${wsUrl}. Ensure both devices are on the same Wi-Fi.`;
+        console.warn('[WebMouse] connection failure reason:', errReason);
         let errHint = `Phone cannot reach Windows Helper at ${wsUrl}. Check that both devices are on the same Wi-Fi and that Windows Firewall allows WebMouse on the local network.`;
         if (isHttpsOrigin && wsUrl.startsWith('ws://')) {
           errHint += ' (If blocked by browser over HTTPS, allow Insecure Content in site settings or add to Home Screen).';
@@ -194,6 +203,17 @@ export class WebSocketClient {
         this.reconnectAttempts = 0;
         this.setStatus('connected');
         this.addLog('rx', `Authenticated: Connected to ${data.computerName || 'Windows PC'}`);
+        
+        // Save persistent trusted token if provided (Requirement 9)
+        if (data.token) {
+          try {
+            localStorage.setItem('webmouse_trusted_token', data.token);
+            this.config.token = data.token;
+          } catch (e) {}
+        }
+
+        console.log('[WebMouse] successful pairing: Connected to', data.computerName || 'Windows PC');
+
         this.onDeviceInfo({
           computerName: data.computerName || 'Windows PC',
           screenWidth: data.screenWidth,
@@ -204,7 +224,8 @@ export class WebSocketClient {
         // Start latency monitoring loop
         this.startPingLoop();
       } else {
-        const errorMsg = data.message || 'Incorrect 6-digit pairing code';
+        const errorMsg = data.message || 'Incorrect 6-digit pairing code or expired session';
+        console.warn('[WebMouse] connection failure reason: Authentication failed -', errorMsg);
         this.setStatus('auth_failed');
         this.onDeviceInfo({
           computerName: 'Windows PC',

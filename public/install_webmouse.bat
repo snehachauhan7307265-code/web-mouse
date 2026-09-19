@@ -41,6 +41,11 @@ if not exist "%~dp0webmouse_server.py" (
     )
 )
 
+if not exist "%~dp0webmouse_server.py" (
+    echo [*] Downloading latest webmouse_server.py...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://ais-dev-6o3nmbyzug3q657ngky2wo-972641513496.asia-southeast1.run.app/webmouse_server.py' -OutFile '%~dp0webmouse_server.py' -TimeoutSec 15 } catch { (New-Object Net.WebClient).DownloadFile('https://ais-dev-6o3nmbyzug3q657ngky2wo-972641513496.asia-southeast1.run.app/webmouse_server.py', '%~dp0webmouse_server.py') }" >nul 2>&1
+)
+
 :: 3. Generate requirements.txt if missing
 if not exist "%~dp0requirements.txt" (
     (
