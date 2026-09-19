@@ -18,7 +18,7 @@ import os
 import base64
 import webbrowser
 from pathlib import Path
-from typing import Set, Dict
+from typing import Set, Dict, Any, Optional
 
 try:
     import pyperclip
@@ -27,22 +27,25 @@ except ImportError:
     print("[WARNING] pyperclip not installed. Clipboard sync will be disabled.")
 
 # Auto-install or fallback for websockets
+HAS_WEBSOCKETS_PKG = False
 try:
     import websockets
     from websockets.server import WebSocketServerProtocol
+    HAS_WEBSOCKETS_PKG = True
 except ImportError:
-    import subprocess
-    print("[*] 'websockets' library not found. Installing automatically via pip...")
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "websockets"])
+        import subprocess
+        print("[*] Checking 'websockets' library...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "websockets"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         import websockets
         from websockets.server import WebSocketServerProtocol
+        HAS_WEBSOCKETS_PKG = True
         print("[OK] 'websockets' installed successfully.")
-    except Exception as _ws_err:
-        print(f"\n[ERROR] Could not install 'websockets': {_ws_err}")
-        print("Please run in Command Prompt: pip install websockets\n")
-        input("Press Enter to exit...")
-        sys.exit(1)
+    except Exception:
+        HAS_WEBSOCKETS_PKG = False
+        print("[INFO] Running in Zero-Dependency Mode (Pure Python RFC 6455 WebSocket Engine active).")
+
+WebSocketServerProtocol = Any
 
 # Windows Virtual Key Code mappings for native user32 input
 VK_CODE_MAP = {
@@ -150,6 +153,221 @@ except ImportError:
     except Exception as _pya_err:
         print(f"[INFO] Using native Windows user32 controller (zero pip dependencies needed).")
         pyautogui = WindowsNativeInput()
+
+
+class PurePythonWebSocketClient:
+    """Zero-dependency RFC 6455 WebSocket client adapter for standard library asyncio."""
+    def __init__(self, reader, writer, client_addr):
+        self.reader = reader
+        self.writer = writer
+        self.remote_address = client_addr
+        self.closed = False
+
+    async def send(self, message):
+        if self.closed:
+            return
+        import struct
+        payload = message.encode("utf-8") if isinstance(message, str) else message
+        length = len(payload)
+        opcode = 0x1 if isinstance(message, str) else 0x2
+        if length <= 125:
+            header = struct.pack("!BB", 0x80 | opcode, length)
+        elif length <= 65535:
+            header = struct.pack("!BBH", 0x80 | opcode, 126, length)
+        else:
+            header = struct.pack("!BBQ", 0x80 | opcode, 127, length)
+        try:
+            self.writer.write(header + payload)
+            await self.writer.drain()
+        except Exception:
+            self.closed = True
+
+    async def close(self):
+        self.closed = True
+        try:
+            self.writer.close()
+            await self.writer.wait_closed()
+        except Exception:
+            pass
+
+    async def __aiter__(self):
+        import struct
+        while not self.closed:
+            try:
+                head = await self.reader.readexactly(2)
+                b1, b2 = head[0], head[1]
+                opcode = b1 & 0x0F
+                length = b2 & 0x7F
+                is_masked = bool(b2 & 0x80)
+
+                if opcode == 0x8:  # Close
+                    self.closed = True
+                    break
+                elif opcode == 0x9:  # Ping
+                    self.writer.write(struct.pack("!BB", 0x8A, 0))
+                    await self.writer.drain()
+                    continue
+                elif opcode == 0xA:  # Pong
+                    continue
+
+                if length == 126:
+                    len_bytes = await self.reader.readexactly(2)
+                    length = struct.unpack("!H", len_bytes)[0]
+                elif length == 127:
+                    len_bytes = await self.reader.readexactly(8)
+                    length = struct.unpack("!Q", len_bytes)[0]
+
+                if is_masked:
+                    mask = await self.reader.readexactly(4)
+                    raw_data = await self.reader.readexactly(length)
+                    payload = bytearray(raw_data)
+                    for i in range(length):
+                        payload[i] ^= mask[i % 4]
+                else:
+                    payload = await self.reader.readexactly(length)
+
+                if opcode == 0x1:
+                    yield payload.decode("utf-8", errors="ignore")
+                elif opcode == 0x2:
+                    yield bytes(payload)
+            except Exception:
+                self.closed = True
+                break
+
+
+class PurePythonWebSocketServer:
+    """Zero-dependency asyncio WebSocket & HTTP server for WebMouse."""
+    def __init__(self, server: 'WebMouseServer'):
+        self.server = server
+
+    async def handle_client(self, reader, writer):
+        import hashlib, base64
+        client_addr = writer.get_extra_info('peername') or ("127.0.0.1", 0)
+        try:
+            request_data = b""
+            while b"\r\n\r\n" not in request_data:
+                chunk = await reader.read(4096)
+                if not chunk:
+                    writer.close()
+                    return
+                request_data += chunk
+                if len(request_data) > 65536:
+                    writer.close()
+                    return
+
+            header_part, _ = request_data.split(b"\r\n\r\n", 1)
+            lines = header_part.decode('utf-8', errors='ignore').split("\r\n")
+            request_line = lines[0] if lines else ""
+            parts = request_line.split(" ")
+            method = parts[0].upper() if len(parts) > 0 else "GET"
+            path = parts[1] if len(parts) > 1 else "/"
+
+            headers = {}
+            for line in lines[1:]:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    headers[k.strip().lower()] = v.strip()
+
+            if "upgrade" in headers.get("connection", "").lower() and headers.get("upgrade", "").lower() == "websocket":
+                sec_key = headers.get("sec-websocket-key", "")
+                if not sec_key:
+                    writer.close()
+                    return
+                guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+                accept_key = base64.b64encode(hashlib.sha1((sec_key + guid).encode()).digest()).decode()
+                handshake_resp = (
+                    "HTTP/1.1 101 Switching Protocols\r\n"
+                    "Upgrade: websocket\r\n"
+                    "Connection: Upgrade\r\n"
+                    f"Sec-WebSocket-Accept: {accept_key}\r\n\r\n"
+                )
+                writer.write(handshake_resp.encode())
+                await writer.drain()
+
+                ws_client = PurePythonWebSocketClient(reader, writer, client_addr)
+                await self.server.handle_connection(ws_client)
+            else:
+                await self.handle_http(method, path, headers, writer)
+        except Exception:
+            pass
+        finally:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+
+    async def handle_http(self, method, path, headers, writer):
+        current_lan_ip = get_local_ip()
+        if method == "OPTIONS":
+            resp = (
+                "HTTP/1.1 204 No Content\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+                "Access-Control-Allow-Headers: *\r\n"
+                "Connection: close\r\n\r\n"
+            )
+            writer.write(resp.encode())
+            await writer.drain()
+            return
+
+        import urllib.parse
+        parsed = urllib.parse.urlparse(path)
+        req_path = parsed.path
+        if req_path in ("/api/pairing-info", "/api/info", "/info"):
+            import secrets, time
+            temp_token = secrets.token_hex(16)
+            expires_at = int(time.time() + 60)
+            self.server.qr_tokens[temp_token] = expires_at
+            qr_payload = {
+                "type": "webmouse_pair",
+                "version": 1,
+                "host": current_lan_ip,
+                "port": self.server.port,
+                "token": temp_token,
+                "expiresAt": expires_at
+            }
+            data = {
+                "type": "host_pairing_info",
+                "host": current_lan_ip,
+                "ip": current_lan_ip,
+                "port": self.server.port,
+                "version": 1,
+                "token": temp_token,
+                "pairingToken": temp_token,
+                "code": self.server.pairing_code,
+                "expiresAt": expires_at,
+                "qrPayload": qr_payload,
+                "connectedDevices": len(self.server.authenticated_clients)
+            }
+            body = json.dumps(data).encode('utf-8')
+            resp = (
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: application/json; charset=utf-8\r\n"
+                f"Content-Length: {len(body)}\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Connection: close\r\n\r\n"
+            )
+            writer.write(resp.encode() + body)
+            await writer.drain()
+        else:
+            body = b"WebMouse V1 Helper Server Active"
+            resp = (
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/plain; charset=utf-8\r\n"
+                f"Content-Length: {len(body)}\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Connection: close\r\n\r\n"
+            )
+            writer.write(resp.encode() + body)
+            await writer.drain()
+
+    async def start(self):
+        srv = await asyncio.start_server(self.handle_client, self.server.host, self.server.port)
+        print(f"[*] WebMouse Helper is ACTIVE on port {self.server.port} (Zero-Dependency Engine).")
+        print("[*] Keep this Command Prompt window OPEN while using WebMouse.\n")
+        async with srv:
+            await srv.serve_forever()
 
 
 # Key mapping dictionary from web keys to PyAutoGUI key names
@@ -1681,19 +1899,23 @@ async def main():
     asyncio.create_task(safe_watch_send_folder())
 
     try:
-        async with websockets.serve(
-            server.handle_connection,
-            server.host,
-            server.port,
-            process_request=server.process_request,
-            ping_interval=20,
-            ping_timeout=20,
-            max_size=10_000_000
-        ):
-            print(f"[*] WebMouse Helper is ACTIVE and listening on port {server.port}.")
-            print("[*] Keep this Command Prompt window OPEN while using WebMouse.\n")
-            # Run forever
-            await asyncio.Future()
+        if HAS_WEBSOCKETS_PKG:
+            async with websockets.serve(
+                server.handle_connection,
+                server.host,
+                server.port,
+                process_request=server.process_request,
+                ping_interval=20,
+                ping_timeout=20,
+                max_size=10_000_000
+            ):
+                print(f"[*] WebMouse Helper is ACTIVE and listening on port {server.port}.")
+                print("[*] Keep this Command Prompt window OPEN while using WebMouse.\n")
+                # Run forever
+                await asyncio.Future()
+        else:
+            server_runner = PurePythonWebSocketServer(server)
+            await server_runner.start()
     except OSError as e:
         err_str = str(e).lower()
         lan_ip = get_local_ip()

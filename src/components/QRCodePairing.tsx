@@ -263,24 +263,36 @@ export function QRCodePairing({
                   {/* Step 1: Download helper */}
                   <div className="pt-1 space-y-2">
                     <a
-                      id="btn-download-run-bat"
-                      href="/run_webmouse.bat"
-                      download="run_webmouse.bat"
-                      className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-md"
+                      id="btn-download-zip-package"
+                      href="/WebMouse-Windows.zip"
+                      download="WebMouse-Windows.zip"
+                      className="w-full py-3 px-3 bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-lg"
                     >
-                      <Download className="w-4 h-4 text-indigo-200" />
-                      <span>Download run_webmouse.bat (CMD Stays Open)</span>
+                      <Download className="w-4 h-4 text-emerald-100" />
+                      <span>📦 Download WebMouse (ZIP - Recommended)</span>
                     </a>
-                    
-                    <a
-                      id="btn-download-installer-tab"
-                      href="/install_webmouse.bat"
-                      download="install_webmouse.bat"
-                      className="w-full py-2 px-3 bg-zinc-850 hover:bg-zinc-800 active:scale-98 text-zinc-300 rounded-xl text-xs font-medium flex items-center justify-center gap-2 border border-zinc-750 transition-all"
-                    >
-                      <Download className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Download install_webmouse.bat (Full Installer)</span>
-                    </a>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <a
+                        id="btn-download-run-bat"
+                        href="/run_webmouse.bat"
+                        download="run_webmouse.bat"
+                        className="py-2 px-2 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md text-center"
+                      >
+                        <Download className="w-3.5 h-3.5 text-indigo-200" />
+                        <span>run_webmouse.bat</span>
+                      </a>
+                      
+                      <a
+                        id="btn-download-python-script"
+                        href="/webmouse_server.py"
+                        download="webmouse_server.py"
+                        className="py-2 px-2 bg-zinc-800 hover:bg-zinc-700 active:scale-98 text-zinc-200 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 border border-zinc-700 transition-all text-center"
+                      >
+                        <Download className="w-3.5 h-3.5 text-amber-400" />
+                        <span>webmouse_server.py</span>
+                      </a>
+                    </div>
                   </div>
 
                   {/* Step 2: Open local interface (Laptop only) */}

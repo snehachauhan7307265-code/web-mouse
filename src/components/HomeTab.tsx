@@ -183,30 +183,27 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           </div>
         </div>
       ) : (
-        <div className="w-full p-5 rounded-3xl bg-gradient-to-br from-indigo-950/40 via-zinc-900 to-indigo-950/30 border border-indigo-500/30 flex flex-col items-center text-center space-y-4 shadow-xl">
+        <div className="w-full p-5 rounded-3xl bg-zinc-900/90 border border-zinc-800 flex flex-col items-center text-center space-y-4 shadow-xl">
           <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-2xl border border-indigo-500/20 shadow-inner">
             <KeyRound className="w-7 h-7 text-indigo-400" />
           </div>
           <div>
             <h2 className="text-lg font-bold text-white tracking-tight">Connect Phone to Laptop</h2>
             <p className="text-xs text-zinc-400 mt-1 max-w-xs leading-relaxed">
-              Enter the 6-digit code shown in your laptop CMD window, or scan the screen QR code.
+              Scan the QR code or enter the 6-digit PIN shown on your laptop.
             </p>
           </div>
 
           <div className="w-full max-w-xs space-y-2.5 pt-1">
-            {/* Primary 1: Enter 6-Digit PIN from CMD (Direct User Request) */}
+            {/* Primary 1: Enter 6-Digit PIN */}
             <button
               id="btn-enter-pin-cmd"
               onClick={() => onOpenConnectionModal?.('manual_pin')}
               className="w-full py-3.5 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-semibold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-indigo-600/25 transition-all"
             >
               <Terminal className="w-4 h-4 text-indigo-200" />
-              <span>⌨️ Enter 6-Digit PIN from CMD</span>
+              <span>Enter 6-Digit PIN</span>
             </button>
-            <div className="text-[11px] text-zinc-400 flex items-center justify-center gap-1">
-              <span>CMD में दिख रहा 6-अंकों का कोड यहाँ डालें</span>
-            </div>
 
             {/* Primary 2: Camera Scan */}
             <button
@@ -215,7 +212,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               className="w-full py-3 px-4 rounded-2xl bg-emerald-600/90 hover:bg-emerald-500 active:scale-[0.98] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition-all"
             >
               <Camera className="w-4 h-4 text-emerald-100" />
-              <span>📱 Scan Laptop QR with Camera</span>
+              <span>Scan QR Code</span>
             </button>
 
             {/* Primary 3: Host PC Screen Show QR / Open CMD */}
@@ -225,7 +222,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               className="w-full py-2.5 px-4 rounded-2xl bg-zinc-800 hover:bg-zinc-700/80 active:scale-[0.98] border border-zinc-700/80 text-zinc-300 font-medium text-xs flex items-center justify-center gap-2 transition-all shadow-sm"
             >
               <QrCode className="w-4 h-4 text-indigo-400" />
-              <span>💻 Show QR & CMD Helper (Laptop)</span>
+              <span>Laptop QR & Helper</span>
             </button>
           </div>
         </div>
