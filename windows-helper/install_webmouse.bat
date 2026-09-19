@@ -41,6 +41,11 @@ if not exist "%~dp0webmouse_server.py" (
     )
 )
 
+if not exist "%~dp0webmouse_server.py" (
+    echo [*] Downloading latest webmouse_server.py...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://ais-dev-6o3nmbyzug3q657ngky2wo-972641513496.asia-southeast1.run.app/webmouse_server.py' -OutFile '%~dp0webmouse_server.py' -TimeoutSec 15 } catch { (New-Object Net.WebClient).DownloadFile('https://ais-dev-6o3nmbyzug3q657ngky2wo-972641513496.asia-southeast1.run.app/webmouse_server.py', '%~dp0webmouse_server.py') }" >nul 2>&1
+)
+
 :: 3. Generate requirements.txt if missing
 if not exist "%~dp0requirements.txt" (
     (
@@ -116,18 +121,22 @@ if %errorlevel% equ 0 (
 )
 echo.
 
-:: 10. Start the server right now in an open terminal window (so user can see IP and logs)
+:: 10. Start the server right now directly in this CMD window
 echo =========================================================
-echo [SUCCESS] Starting WebMouse Server now!
+echo [SUCCESS] WebMouse Installed! Starting Server in this window...
 echo =========================================================
 echo.
-echo - A new terminal window will open with your WebMouse server.
-echo - You will see your Laptop IP (e.g. 192.168.x.x) and Pairing Code!
-echo - Keep that window open while using WebMouse.
+echo - You will see your Laptop IP and 6-Digit Pairing PIN below!
+echo - THIS WINDOW WILL STAY OPEN SO YOU CAN ENTER THE PIN.
 echo.
 
-start "WebMouse Server [RUNNING]" cmd /k "cd /d "%~dp0" && python webmouse_server.py"
+:INSTALL_SERVER_LOOP
+python webmouse_server.py
 
-echo You can now connect your phone using the IP shown in the server window.
 echo.
+echo =========================================================
+echo WebMouse server stopped. Window will NOT close!
+echo Press any key to restart server...
+echo =========================================================
 pause
+goto INSTALL_SERVER_LOOP

@@ -261,24 +261,26 @@ export function QRCodePairing({
                   </p>
                   
                   {/* Step 1: Download helper */}
-                  <div className="pt-1">
-                    <button
-                      id="btn-download-installer-tab"
-                      onClick={handleDownloadHelper}
+                  <div className="pt-1 space-y-2">
+                    <a
+                      id="btn-download-run-bat"
+                      href="/run_webmouse.bat"
+                      download="run_webmouse.bat"
                       className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-md"
                     >
-                      {downloadSuccess ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-                          <span>Downloaded install_webmouse.bat!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-4 h-4" />
-                          <span>Download Windows Helper (.bat)</span>
-                        </>
-                      )}
-                    </button>
+                      <Download className="w-4 h-4 text-indigo-200" />
+                      <span>Download run_webmouse.bat (CMD Stays Open)</span>
+                    </a>
+                    
+                    <a
+                      id="btn-download-installer-tab"
+                      href="/install_webmouse.bat"
+                      download="install_webmouse.bat"
+                      className="w-full py-2 px-3 bg-zinc-850 hover:bg-zinc-800 active:scale-98 text-zinc-300 rounded-xl text-xs font-medium flex items-center justify-center gap-2 border border-zinc-750 transition-all"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Download install_webmouse.bat (Full Installer)</span>
+                    </a>
                   </div>
 
                   {/* Step 2: Open local interface (Laptop only) */}

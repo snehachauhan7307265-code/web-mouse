@@ -1671,14 +1671,14 @@ async def main():
     else:
         print(f"[+] WebMouse V1 Background Helper active on port {server.port} with System Tray.")
 
-    async def safe_watch_send_folder(self):
+    async def safe_watch_send_folder():
         try:
-            await self.watch_send_folder()
+            await server.watch_send_folder()
         except Exception as e:
             print(f"[INFO] Outgoing folder watcher paused: {e}")
 
     # Start the WebSocket server (with integrated HTTP Gateway)
-    asyncio.create_task(server.safe_watch_send_folder())
+    asyncio.create_task(safe_watch_send_folder())
 
     try:
         async with websockets.serve(
@@ -1696,44 +1696,51 @@ async def main():
             await asyncio.Future()
     except OSError as e:
         err_str = str(e).lower()
-        if "10048" in err_str or "already in use" in err_str or getattr(e, 'errno', 0) in (98, 48, 10048):
-            lan_ip = get_local_ip()
-            print("\n" + "=" * 62)
-            print(" [!] NOTICE: Port 8765 is already in use by a running process.")
-            print("=" * 62)
-            print(" WebMouse Helper is likely ALREADY RUNNING on this computer!")
-            print(f" Connect your phone to Laptop Wi-Fi IP: {lan_ip}  Port: 8765")
-            print(f" 6-Digit Pairing PIN: {server.pairing_code}")
-            print("\n If you wish to restart fresh:")
-            print(" 1. Open Task Manager and end any existing 'python.exe' tasks.")
-            print(" 2. Then start WebMouse again.")
-            print("=" * 62)
-            input("\nPress Enter to exit...")
-            return
-        else:
-            raise
+        lan_ip = get_local_ip()
+        print("\n" + "=" * 62)
+        print(" [!] NOTICE: Port 8765 is already in use by a running process.")
+        print("=" * 62)
+        print(" WebMouse Helper is ALREADY RUNNING on this computer!")
+        print(f" Connect your phone to Laptop Wi-Fi IP : {lan_ip}")
+        print(f" WebSocket Port                        : {server.port}")
+        print(f" 6-Digit Pairing PIN                   : {server.pairing_code}")
+        print("=" * 62)
+        print(" Window will stay OPEN so you can use the code above.")
+        print(" (To restart completely, close other python windows or end task in Task Manager)")
+        print("=" * 62 + "\n")
+        # Keep window running forever so user can see code
+        while True:
+            await asyncio.sleep(3600)
+    except Exception as e:
+        print(f"[!] Server exception: {e}")
+        # Keep window alive
+        while True:
+            await asyncio.sleep(3600)
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n[!] WebMouse Server stopped by user.")
-        sys.exit(0)
-    except Exception as e:
-        import traceback
-        print("\n" + "=" * 62)
-        print(" [!] WebMouse Server encountered an error:")
-        print("=" * 62)
-        traceback.print_exc()
-        print("=" * 62)
-        print("Tip: If dependencies are missing, run: pip install websockets pyautogui")
-    finally:
-        print("\n========================================================")
-        print(" Command Prompt window kept open.")
-        print(" Press Enter to exit...")
-        print("========================================================")
+    import time
+    while True:
         try:
-            input()
-        except:
-            pass
+            asyncio.run(main())
+            # If main ever exits, keep CMD open forever
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            print("\n[!] WebMouse Server stopped by user (Ctrl+C).")
+            print("Press Enter to close window...")
+            try:
+                input()
+            except:
+                pass
+            sys.exit(0)
+        except Exception as e:
+            import traceback
+            print("\n" + "=" * 62)
+            print(" [!] WebMouse Server encountered an error:")
+            print("=" * 62)
+            traceback.print_exc()
+            print("=" * 62)
+            print("Tip: If dependencies are missing, run: pip install websockets pyautogui")
+            print("Keeping window OPEN so you can read this. Retrying in 10 seconds...\n")
+            time.sleep(10)
