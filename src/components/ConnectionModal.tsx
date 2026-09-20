@@ -264,6 +264,10 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             setShowScanner(false);
             if (initialView === 'scanner') onClose();
           }}
+          onManualPin={() => {
+            setShowScanner(false);
+            setShowManual(true);
+          }}
         />
       )}
       {showQRHost && (

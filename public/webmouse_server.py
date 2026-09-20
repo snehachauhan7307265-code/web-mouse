@@ -865,6 +865,9 @@ class WebMouseServer:
         except Exception:
             self.screen_width, self.screen_height = (1920, 1080)
 
+        # Active Projector streaming tasks per client: { websocket: asyncio.Task }
+        self.projector_tasks: Dict[WebSocketServerProtocol, asyncio.Task] = {}
+
     def update_tray_status(self):
         if self.tray_manager:
             try:
@@ -965,6 +968,96 @@ class WebMouseServer:
                         os.rename(filepath, dest_path)
                     except Exception as e:
                         print(f"Error processing {filepath}: {e}")
+
+    async def stream_projector_loop(self, websocket):
+        """
+        Tarika A: Captures real Windows desktop screen and streams JPEG base64 frames
+        directly to the phone over the open WebSocket connection.
+        Supports PIL ImageGrab, mss, or Windows native GDI screenshot fallback.
+        """
+        import io, time
+        print(f"[PROJECTOR] Started real-time screen stream to client.")
+        target_fps = 15
+        interval = 1.0 / target_fps
+        quality = 55
+        target_width = 1024
+
+        while True:
+            t_start = time.time()
+            img = None
+
+            # Attempt 1: PIL ImageGrab (standard with pyautogui)
+            try:
+                from PIL import ImageGrab, Image
+                img = ImageGrab.grab()
+            except Exception:
+                # Attempt 2: mss if installed
+                try:
+                    import mss
+                    with mss.mss() as sct:
+                        monitor = sct.monitors[1]
+                        sct_img = sct.grab(monitor)
+                        from PIL import Image
+                        img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                except Exception:
+                    # Attempt 3: Windows GDI via ctypes
+                    try:
+                        import ctypes
+                        from ctypes import wintypes
+                        from PIL import Image
+                        user32 = ctypes.windll.user32
+                        gdi32 = ctypes.windll.gdi32
+                        w = user32.GetSystemMetrics(0)
+                        h = user32.GetSystemMetrics(1)
+                        hdesktop = user32.GetDesktopWindow()
+                        hdc = user32.GetDC(hdesktop)
+                        memdc = gdi32.CreateCompatibleDC(hdc)
+                        bitmap = gdi32.CreateCompatibleBitmap(hdc, w, h)
+                        gdi32.SelectObject(memdc, bitmap)
+                        gdi32.BitBlt(memdc, 0, 0, w, h, hdc, 0, 0, 0x00CC0020) # SRCCOPY
+                        # Copy bits
+                        bmpinfo = (ctypes.c_byte * 40)()
+                        ctypes.c_uint32.from_buffer(bmpinfo, 0).value = 40
+                        ctypes.c_int32.from_buffer(bmpinfo, 4).value = w
+                        ctypes.c_int32.from_buffer(bmpinfo, 8).value = -h
+                        ctypes.c_uint16.from_buffer(bmpinfo, 12).value = 1
+                        ctypes.c_uint16.from_buffer(bmpinfo, 14).value = 32 # 32 bpp
+                        buf = (ctypes.c_byte * (w * h * 4))()
+                        gdi32.GetDIBits(memdc, bitmap, 0, h, buf, bmpinfo, 0)
+                        raw_bytes = bytes(buf)
+                        img = Image.frombytes("RGB", (w, h), raw_bytes, "raw", "BGRX")
+                        gdi32.DeleteObject(bitmap)
+                        gdi32.DeleteDC(memdc)
+                        user32.ReleaseDC(hdesktop, hdc)
+                    except Exception as e:
+                        print(f"[PROJECTOR] Screen capture error: {e}")
+                        img = None
+
+            if img:
+                try:
+                    orig_w, orig_h = img.size
+                    if orig_w > target_width:
+                        scale = target_width / float(orig_w)
+                        new_h = int(orig_h * scale)
+                        img = img.resize((target_width, new_h))
+                    
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=quality, optimize=True)
+                    b64_img = base64.b64encode(buf.getvalue()).decode("ascii")
+                    
+                    frame_msg = json.dumps({
+                        "type": "screen_frame",
+                        "image": f"data:image/jpeg;base64,{b64_img}",
+                        "timestamp": int(time.time() * 1000)
+                    })
+                    await websocket.send(frame_msg)
+                except Exception as send_err:
+                    print(f"[PROJECTOR] Error sending frame: {send_err}")
+                    break
+
+            elapsed = time.time() - t_start
+            sleep_time = max(0.01, interval - elapsed)
+            await asyncio.sleep(sleep_time)
 
     def print_banner(self):
         lan_ip = get_local_ip()
@@ -1850,11 +1943,46 @@ class WebMouseServer:
                             except Exception as e:
                                 print(f"Error relaying WebRTC signal: {e}")
 
+                # 24. PC Screen Mirroring (Projector: Tarika A)
+                elif msg_type == "start_projector":
+                    print(f"[PROJECTOR] Client requested start_projector")
+                    # Cancel existing task if any
+                    if websocket in self.projector_tasks:
+                        task = self.projector_tasks[websocket]
+                        if not task.done():
+                            task.cancel()
+                    
+                    # Start streaming loop in background
+                    loop_task = asyncio.create_task(self.stream_projector_loop(websocket))
+                    self.projector_tasks[websocket] = loop_task
+                    await websocket.send(json.dumps({
+                        "type": "projector_status",
+                        "active": True,
+                        "message": "PC screen streaming active"
+                    }))
+
+                elif msg_type == "stop_projector":
+                    print(f"[PROJECTOR] Client requested stop_projector")
+                    if websocket in self.projector_tasks:
+                        task = self.projector_tasks.pop(websocket, None)
+                        if task and not task.done():
+                            task.cancel()
+                    await websocket.send(json.dumps({
+                        "type": "projector_status",
+                        "active": False,
+                        "message": "PC screen streaming stopped"
+                    }))
+
         except websockets.ConnectionClosed:
             pass
         except Exception as e:
             print(f"[!] Exception with client {client_addr}: {e}")
         finally:
+            # Stop any running projector task for this client
+            if websocket in self.projector_tasks:
+                task = self.projector_tasks.pop(websocket, None)
+                if task and not task.done():
+                    task.cancel()
             info = self.client_info.pop(websocket, client_addr)
             self.authenticated_clients.discard(websocket)
             self.update_tray_status()

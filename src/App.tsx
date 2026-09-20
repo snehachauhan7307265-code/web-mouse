@@ -351,63 +351,67 @@ export default function App() {
           </div>
         )}
 
-        {/* Top Header */}
-        <Header
-        status={status}
-        deviceInfo={deviceInfo}
-        latencyMs={latencyMs}
-        isActive={isActive}
-        onOpenConnectionModal={(view) => openConnectionModal(view || 'normal')}
-        onOpenHelperGuide={() => setIsHelperGuideOpen(true)}
-      />
+        {/* Top Header - hidden during full-screen WhatsApp Screen Share */}
+        {activeTab !== 'projector' && (
+          <>
+            <Header
+              status={status}
+              deviceInfo={deviceInfo}
+              latencyMs={latencyMs}
+              isActive={isActive}
+              onOpenConnectionModal={(view) => openConnectionModal(view || 'normal')}
+              onOpenHelperGuide={() => setIsHelperGuideOpen(true)}
+            />
 
-      {/* Connection Notice Banner if Disconnected (Easy One-Tap Connect) */}
-      {status === 'disconnected' && (
-        <div className="bg-gradient-to-r from-indigo-950/70 via-zinc-900/90 to-indigo-950/70 border-b border-indigo-500/20 px-4 py-2 flex items-center justify-between text-xs text-indigo-200 shrink-0">
-          <div className="flex items-center gap-2 truncate">
-            <Wifi className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-            <span className="truncate">Scan QR to connect laptop</span>
-          </div>
-          <button
-            id="btn-quick-connect-banner"
-            onClick={() => openConnectionModal('scanner')}
-            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold text-[11px] shrink-0 active:scale-95 transition-all shadow-sm flex items-center gap-1.5"
-          >
-            <Scan className="w-3.5 h-3.5 text-emerald-100" />
-            <span>Scan QR</span>
-          </button>
-        </div>
-      )}
+            {/* Connection Notice Banner if Disconnected (Easy One-Tap Connect) */}
+            {status === 'disconnected' && (
+              <div className="bg-gradient-to-r from-indigo-950/70 via-zinc-900/90 to-indigo-950/70 border-b border-indigo-500/20 px-4 py-2 flex items-center justify-between text-xs text-indigo-200 shrink-0">
+                <div className="flex items-center gap-2 truncate">
+                  <Wifi className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span className="truncate">Scan QR to connect laptop</span>
+                </div>
+                <button
+                  id="btn-quick-connect-banner"
+                  onClick={() => openConnectionModal('scanner')}
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold text-[11px] shrink-0 active:scale-95 transition-all shadow-sm flex items-center gap-1.5"
+                >
+                  <Scan className="w-3.5 h-3.5 text-emerald-100" />
+                  <span>Scan QR</span>
+                </button>
+              </div>
+            )}
 
-      {status === 'auth_failed' && (
-        <div className="bg-rose-950/80 border-b border-rose-500/30 px-4 py-2 flex items-center justify-between text-xs text-rose-200 shrink-0">
-          <div className="flex items-center gap-2 truncate">
-            <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-            <span>Pairing Code Rejected by Windows Helper</span>
-          </div>
-          <button
-            onClick={() => setIsConnectionModalOpen(true)}
-            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-semibold text-[11px] shrink-0 active:scale-95"
-          >
-            Change Code
-          </button>
-        </div>
-      )}
+            {status === 'auth_failed' && (
+              <div className="bg-rose-950/80 border-b border-rose-500/30 px-4 py-2 flex items-center justify-between text-xs text-rose-200 shrink-0">
+                <div className="flex items-center gap-2 truncate">
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  <span>Pairing Code Rejected by Windows Helper</span>
+                </div>
+                <button
+                  onClick={() => setIsConnectionModalOpen(true)}
+                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-semibold text-[11px] shrink-0 active:scale-95"
+                >
+                  Change Code
+                </button>
+              </div>
+            )}
 
-      {status === 'error' && (
-        <div className="bg-amber-950/80 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between text-xs text-amber-200 shrink-0">
-          <div className="flex items-center gap-2 truncate">
-            <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span>Cannot reach {config.host}:{config.port}</span>
-          </div>
-          <button
-            onClick={() => setIsConnectionModalOpen(true)}
-            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-semibold text-[11px] shrink-0 active:scale-95"
-          >
-            Check Setup
-          </button>
-        </div>
-      )}
+            {status === 'error' && (
+              <div className="bg-amber-950/80 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between text-xs text-amber-200 shrink-0">
+                <div className="flex items-center gap-2 truncate">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Cannot reach {config.host}:{config.port}</span>
+                </div>
+                <button
+                  onClick={() => setIsConnectionModalOpen(true)}
+                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-semibold text-[11px] shrink-0 active:scale-95"
+                >
+                  Check Setup
+                </button>
+              </div>
+            )}
+          </>
+        )}
 
       {/* Main Screen Content View */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -470,10 +474,12 @@ export default function App() {
         {activeTab === 'projector' && (
           <ScreenProjectorTab
             onSendMessage={handleSendMessage}
-            webrtcMessages={webrtcMessages}
+            lastIncomingMessage={lastIncomingMessage}
             status={status}
             deviceInfo={deviceInfo}
+            settings={settings}
             isDark={isDark}
+            onExit={() => handleTabChange('home')}
           />
         )}
 
@@ -516,96 +522,98 @@ export default function App() {
         ))}
       </div>
 
-      {/* Bottom Mobile Navigation Bar */}
-      <nav 
-        id="nav-bottom-tabs" 
-        className="h-16 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 px-3 flex items-center justify-around select-none shrink-0 z-30"
-      >
-        <button
-          id="tab-btn-home"
-          onClick={() => handleTabChange('home')}
-          className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
-            activeTab === 'home'
-              ? 'text-indigo-400 font-semibold'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
+      {/* Bottom Mobile Navigation Bar - hidden during WhatsApp Screen Share */}
+      {activeTab !== 'projector' && (
+        <nav 
+          id="nav-bottom-tabs" 
+          className="h-16 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 px-3 flex items-center justify-around select-none shrink-0 z-30"
         >
-          <div className={`p-1.5 rounded-xl transition-all ${
-            activeTab === 'home' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
-          }`}>
-            <MonitorPlay className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] mt-0.5 tracking-tight">Home</span>
-        </button>
+          <button
+            id="tab-btn-home"
+            onClick={() => handleTabChange('home')}
+            className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
+              activeTab === 'home'
+                ? 'text-indigo-400 font-semibold'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <div className={`p-1.5 rounded-xl transition-all ${
+              activeTab === 'home' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
+            }`}>
+              <MonitorPlay className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] mt-0.5 tracking-tight">Home</span>
+          </button>
 
-        <button
-          id="tab-btn-mouse"
-          onClick={() => handleTabChange('mouse')}
-          className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
-            activeTab === 'mouse'
-              ? 'text-indigo-400 font-semibold'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          <div className={`p-1.5 rounded-xl transition-all ${
-            activeTab === 'mouse' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
-          }`}>
-            <MousePointer className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] mt-0.5 tracking-tight">Mouse</span>
-        </button>
+          <button
+            id="tab-btn-mouse"
+            onClick={() => handleTabChange('mouse')}
+            className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
+              activeTab === 'mouse'
+                ? 'text-indigo-400 font-semibold'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <div className={`p-1.5 rounded-xl transition-all ${
+              activeTab === 'mouse' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
+            }`}>
+              <MousePointer className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] mt-0.5 tracking-tight">Mouse</span>
+          </button>
 
-        <button
-          id="tab-btn-share"
-          onClick={() => handleTabChange('share')}
-          className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
-            activeTab === 'share'
-              ? 'text-indigo-400 font-semibold'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          <div className={`p-1.5 rounded-xl transition-all ${
-            activeTab === 'share' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
-          }`}>
-            <Share2 className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] mt-0.5 tracking-tight">Share</span>
-        </button>
+          <button
+            id="tab-btn-share"
+            onClick={() => handleTabChange('share')}
+            className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
+              activeTab === 'share'
+                ? 'text-indigo-400 font-semibold'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <div className={`p-1.5 rounded-xl transition-all ${
+              activeTab === 'share' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
+            }`}>
+              <Share2 className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] mt-0.5 tracking-tight">Share</span>
+          </button>
 
-        <button
-          id="tab-btn-media"
-          onClick={() => handleTabChange('media')}
-          className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
-            activeTab === 'media'
-              ? 'text-indigo-400 font-semibold'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          <div className={`p-1.5 rounded-xl transition-all ${
-            activeTab === 'media' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
-          }`}>
-            <MonitorPlay className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] mt-0.5 tracking-tight">Media</span>
-        </button>
+          <button
+            id="tab-btn-media"
+            onClick={() => handleTabChange('media')}
+            className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
+              activeTab === 'media'
+                ? 'text-indigo-400 font-semibold'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <div className={`p-1.5 rounded-xl transition-all ${
+              activeTab === 'media' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
+            }`}>
+              <MonitorPlay className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] mt-0.5 tracking-tight">Media</span>
+          </button>
 
-        <button
-          id="tab-btn-settings"
-          onClick={() => handleTabChange('settings')}
-          className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
-            activeTab === 'settings'
-              ? 'text-indigo-400 font-semibold'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          <div className={`p-1.5 rounded-xl transition-all ${
-            activeTab === 'settings' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
-          }`}>
-            <SettingsIcon className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] mt-0.5 tracking-tight">Settings</span>
-        </button>
-      </nav>
+          <button
+            id="tab-btn-settings"
+            onClick={() => handleTabChange('settings')}
+            className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
+              activeTab === 'settings'
+                ? 'text-indigo-400 font-semibold'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <div className={`p-1.5 rounded-xl transition-all ${
+              activeTab === 'settings' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
+            }`}>
+              <SettingsIcon className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] mt-0.5 tracking-tight">Settings</span>
+          </button>
+        </nav>
+      )}
 
       {/* Connection Modal */}
       <ConnectionModal

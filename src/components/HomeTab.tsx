@@ -195,17 +195,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           </div>
 
           <div className="w-full max-w-xs space-y-2.5 pt-1">
-            {/* Primary 1: Enter 6-Digit PIN */}
-            <button
-              id="btn-enter-pin-cmd"
-              onClick={() => onOpenConnectionModal?.('manual_pin')}
-              className="w-full py-3.5 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-semibold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-indigo-600/25 transition-all"
-            >
-              <Terminal className="w-4 h-4 text-indigo-200" />
-              <span>Enter 6-Digit PIN</span>
-            </button>
-
-            {/* Primary 2: Camera Scan */}
+            {/* Primary 1: Camera Scan */}
             <button
               id="btn-scan-qr-phone"
               onClick={() => onOpenConnectionModal?.('scanner')}
@@ -215,7 +205,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               <span>Scan QR Code</span>
             </button>
 
-            {/* Primary 3: Host PC Screen Show QR / Open CMD */}
+            {/* Primary 2: Host PC Screen Show QR / Open CMD */}
             <button
               id="btn-show-qr-laptop"
               onClick={() => onOpenConnectionModal?.('qr_host')}
@@ -299,14 +289,18 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         </button>
 
         <button 
+          id="btn-quick-projector"
           onClick={() => onNavigate('projector')}
-          className="flex flex-col items-start p-4 rounded-2xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 transition-all active:scale-95"
+          className="flex flex-col items-start p-4 rounded-2xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-emerald-500/40 transition-all active:scale-95"
         >
-          <div className="p-2 bg-rose-500/10 text-rose-400 rounded-lg mb-3">
+          <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg mb-3">
             <MonitorUp className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold text-zinc-100 text-sm">Projector</h3>
-          <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Share live screen</p>
+          <h3 className="font-semibold text-zinc-100 text-sm flex items-center gap-1.5">
+            <span>Screen Share</span>
+            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400">WA</span>
+          </h3>
+          <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">WhatsApp style share</p>
         </button>
       </div>
 
