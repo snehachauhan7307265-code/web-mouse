@@ -15,7 +15,7 @@ interface ConnectionModalProps {
   onDisconnect: () => void;
   onForgetDevice: () => void;
   onOpenHelperGuide: () => void;
-  initialView?: 'normal' | 'scanner' | 'qr_host' | 'manual_pin';
+  initialView?: 'normal' | 'scanner' | 'qr_host' | 'manual_pin' | 'download_helper';
 }
 
 export const ConnectionModal: React.FC<ConnectionModalProps> = ({
@@ -36,6 +36,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   const [code, setCode] = useState(config.code);
   const [autoReconnect, setAutoReconnect] = useState(config.autoReconnect);
 
+  const [activeModalTab, setActiveModalTab] = useState<'connect' | 'download'>('connect');
   const [showScanner, setShowScanner] = useState(false);
   const [showQRHost, setShowQRHost] = useState(false);
   const [helperStatus, setHelperStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
@@ -53,18 +54,27 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       setCode(config.code);
       setAutoReconnect(config.autoReconnect);
 
-      if (initialView === 'scanner') {
+      if (initialView === 'download_helper') {
+        setActiveModalTab('download');
+        setShowScanner(false);
+        setShowQRHost(false);
+        setShowManual(false);
+      } else if (initialView === 'scanner') {
+        setActiveModalTab('connect');
         setShowScanner(true);
         setShowQRHost(false);
         setShowManual(false);
       } else if (initialView === 'qr_host') {
+        setActiveModalTab('connect');
         fetchLocalHostAndShowQR();
         setShowManual(false);
       } else if (initialView === 'manual_pin') {
+        setActiveModalTab('connect');
         setShowScanner(false);
         setShowQRHost(false);
         setShowManual(true);
       } else {
+        setActiveModalTab('connect');
         setShowScanner(false);
         setShowQRHost(false);
       }
@@ -317,11 +327,45 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
           </button>
         </div>
 
+        {/* Modal Tabs: Connect / Pair vs Download Helper */}
+        <div className="flex border-b border-zinc-800 bg-zinc-950/70 px-4 pt-2 gap-2 shrink-0">
+          <button
+            id="tab-btn-modal-connect"
+            type="button"
+            onClick={() => setActiveModalTab('connect')}
+            className={`py-2 px-3.5 text-xs font-semibold rounded-t-xl transition-all flex items-center justify-center gap-1.5 border-b-2 ${
+              activeModalTab === 'connect'
+                ? 'border-indigo-500 text-white bg-zinc-900'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Wifi className="w-3.5 h-3.5" />
+            <span>Connect / Pair</span>
+          </button>
+          
+          <button
+            id="tab-btn-modal-download"
+            type="button"
+            onClick={() => setActiveModalTab('download')}
+            className={`py-2 px-3.5 text-xs font-semibold rounded-t-xl transition-all flex items-center justify-center gap-1.5 border-b-2 ${
+              activeModalTab === 'download'
+                ? 'border-indigo-500 text-white bg-zinc-900'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Download className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Download Helper</span>
+          </button>
+        </div>
+
         {/* Content */}
         <div className="p-5 space-y-4 overflow-y-auto">
-          {/* Paired Device Section (when already paired / connecting) */}
-          {hasTrustedDevice ? (
+          {/* TAB 1: Connect / Pair */}
+          {activeModalTab === 'connect' && (
             <div className="space-y-4">
+              {/* Paired Device Section (when already paired / connecting) */}
+              {hasTrustedDevice ? (
+                <div className="space-y-4">
               {/* 1. Connected State */}
               {isConnected && (
                 <div className="p-6 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 text-center flex flex-col items-center justify-center space-y-2 shadow-inner">
@@ -616,16 +660,155 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             <button
               id="btn-open-helper-instructions"
               type="button"
-              onClick={onOpenHelperGuide}
+              onClick={() => setActiveModalTab('download')}
               className="w-full py-2 px-3 rounded-xl bg-zinc-950/60 hover:bg-zinc-950 border border-zinc-800 text-xs text-zinc-400 hover:text-indigo-400 flex items-center justify-between transition-colors"
             >
               <div className="flex items-center gap-2">
-                <HelpCircle className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Windows Helper Setup Instructions</span>
+                <Download className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Download Windows Helper (ZIP &amp; .bat)</span>
               </div>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
+            </div>
+          )}
+
+          {/* TAB 2: Download Helper */}
+          {activeModalTab === 'download' && (
+            <div className="space-y-4">
+              {/* 1-Click ZIP Download (Recommended) */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950/60 via-zinc-900 to-indigo-950/40 border border-indigo-500/40 space-y-3 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Terminal className="w-4 h-4 text-indigo-400" />
+                    Windows Helper 1-Click Setup
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
+                    Green CMD
+                  </span>
+                </div>
+
+                <a
+                  id="btn-download-webmouse-zip"
+                  href="/WebMouse-Windows.zip"
+                  download="WebMouse-Windows.zip"
+                  className="w-full py-3.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-indigo-600/30 transition-all"
+                >
+                  <Download className="w-5 h-5 text-indigo-100" />
+                  <span>📦 Download WebMouse (ZIP - Recommended)</span>
+                </a>
+
+                <p className="text-[11px] text-zinc-400 text-center leading-relaxed">
+                  (Ya phir aap direct <code className="text-zinc-200 font-mono">run_webmouse.bat</code> aur <code className="text-zinc-200 font-mono">webmouse_server.py</code> dono files ko apne ek hi folder me save kar sakte hain):
+                </p>
+
+                <div className="grid grid-cols-2 gap-2 pt-0.5">
+                  <a
+                    id="btn-download-bat"
+                    href="/run_webmouse.bat"
+                    download="run_webmouse.bat"
+                    className="py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-200 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors border border-zinc-700"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>run_webmouse.bat</span>
+                  </a>
+                  <a
+                    id="btn-download-py"
+                    href="/webmouse_server.py"
+                    download="webmouse_server.py"
+                    className="py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-200 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors border border-zinc-700"
+                  >
+                    <Download className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>webmouse_server.py</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Simple Steps in Hindi / English */}
+              <div className="p-4 rounded-2xl bg-zinc-950/80 border border-zinc-800 space-y-3">
+                <h3 className="text-xs font-bold text-zinc-200 uppercase tracking-wider flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>🚀 Ab aapko bas ye simple steps follow karne hain:</span>
+                </h3>
+
+                <div className="space-y-2.5 text-xs text-zinc-300">
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">1</span>
+                    <p className="leading-relaxed">
+                      <strong className="text-white">Download ZIP:</strong> Upar diye gaye <strong className="text-indigo-300">📦 Download WebMouse (ZIP)</strong> button par click karke ZIP download karein.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">2</span>
+                    <p className="leading-relaxed">
+                      <strong className="text-white">Extract All:</strong> ZIP file ko right-click karke <strong className="text-zinc-100">&quot;Extract All&quot;</strong> karein.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">3</span>
+                    <p className="leading-relaxed">
+                      <strong className="text-white">Double-Click:</strong> Us folder ke andar <code className="text-emerald-400 bg-black/60 px-1.5 py-0.5 rounded font-mono font-semibold">run_webmouse.bat</code> par Double-Click karein!
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">4</span>
+                    <p className="leading-relaxed">
+                      <strong className="text-white">Green CMD Window &amp; QR:</strong> Laptop par <strong className="text-emerald-400">Green Command Prompt</strong> window khulegi aur browser me QR Code khulega jisme aapka Wi-Fi IP aur QR token hoga.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">5</span>
+                    <p className="leading-relaxed">
+                      <strong className="text-emerald-300">Scan QR to Direct Connect:</strong> Apne phone se <strong className="text-emerald-400">Scan QR Code</strong> dabakar QR scan karein — <span className="text-white font-semibold">phone bina PIN dale seedha laptop se 1-second me connect ho jayega!</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Green Command Prompt Visual Mockup */}
+              <div className="rounded-xl overflow-hidden border border-zinc-800 shadow-xl bg-black font-mono text-[11px]">
+                <div className="bg-zinc-900 px-3 py-1.5 border-b border-zinc-800 flex items-center justify-between text-zinc-400 text-[10px]">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block"></span>
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block"></span>
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block"></span>
+                    <span className="ml-1 text-zinc-300">Command Prompt - run_webmouse.bat</span>
+                  </span>
+                  <span className="text-emerald-400 font-semibold">color 0A</span>
+                </div>
+                <div className="p-3 text-[#00ff66] space-y-1 select-text leading-tight overflow-x-auto">
+                  <p className="opacity-70">&gt; WebMouse V1 — Windows Helper Server [PORT 8765]</p>
+                  <p>==============================================================</p>
+                  <p className="font-bold">          WEBMOUSE V1 — WINDOWS HELPER (CMD)</p>
+                  <p>==============================================================</p>
+                  <p>  [STATUS]           RUNNING (DO NOT CLOSE THIS WINDOW)</p>
+                  <p>  [LAPTOP WI-FI IP]  192.168.1.15</p>
+                  <p>  [PORT]             8765</p>
+                  <p>==============================================================</p>
+                  <p className="text-white font-bold bg-emerald-950/80 py-0.5 px-1 rounded">
+                    &gt;&gt;&gt; 6-DIGIT PAIRING PIN:   [  5  8  2  9  1  4  ] &lt;&lt;&lt;
+                  </p>
+                  <p>==============================================================</p>
+                  <p className="opacity-80">Awaiting connection from phone...</p>
+                </div>
+              </div>
+
+              {/* Action button to switch to connect tab */}
+              <button
+                id="btn-goto-connect-tab"
+                type="button"
+                onClick={() => setActiveModalTab('connect')}
+                className="w-full py-3 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] text-white font-semibold text-xs flex items-center justify-center gap-2 border border-zinc-700 transition-all"
+              >
+                <KeyRound className="w-4 h-4 text-indigo-400" />
+                <span>Got the 6-Digit PIN? Enter PIN &amp; Connect →</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

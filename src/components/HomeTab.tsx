@@ -3,10 +3,7 @@ import {
   MousePointer2, 
   Keyboard as KeyboardIcon, 
   FolderUp, 
-  Image as ImageIcon, 
-  Link, 
   MonitorPlay, 
-  MonitorUp, 
   History,
   Trash2,
   Scan,
@@ -15,7 +12,8 @@ import {
   Camera,
   QrCode,
   Terminal,
-  KeyRound
+  KeyRound,
+  Download
 } from 'lucide-react';
 import { ConnectionStatus, ConnectedDeviceInfo, LogEntry } from '../types';
 
@@ -25,11 +23,11 @@ interface HomeTabProps {
   pairedDevice: ConnectedDeviceInfo | null;
   latencyMs?: number;
   logs: LogEntry[];
-  onNavigate: (tab: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings' | 'projector') => void;
+  onNavigate: (tab: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings') => void;
   onClearLogs: () => void;
   onReconnect: () => void;
   onDisconnect: () => void;
-  onOpenConnectionModal?: (view?: 'normal' | 'scanner' | 'qr_host' | 'manual_pin') => void;
+  onOpenConnectionModal?: (view?: 'normal' | 'scanner' | 'qr_host' | 'manual_pin' | 'download_helper') => void;
   onForgetDevice?: () => void;
 }
 
@@ -231,73 +229,54 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         <p className="text-xs text-indigo-200/70">Swipe to control your computer</p>
       </button>
 
-      {/* 3. Quick Action Grid */}
+      {/* 3. Quick Action Grid (4 Clean Balanced Cards) */}
       <div className="grid grid-cols-2 gap-3">
         <button 
+          id="btn-quick-keyboard"
           onClick={() => onNavigate('keyboard')}
           className="flex flex-col items-start p-4 rounded-2xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 transition-all active:scale-95"
         >
-          <div className="p-2 bg-zinc-800 rounded-lg mb-3 text-zinc-300 group-hover:text-white">
+          <div className="p-2 bg-zinc-800 rounded-lg mb-2.5 text-zinc-300 group-hover:text-white">
             <KeyboardIcon className="w-5 h-5" />
           </div>
           <h3 className="font-semibold text-zinc-100 text-sm">Keyboard</h3>
-          <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Type on your computer</p>
+          <p className="text-xs text-zinc-500 mt-0.5 text-left leading-relaxed">Type on your computer</p>
         </button>
 
         <button 
+          id="btn-quick-share"
           onClick={() => onNavigate('share')}
           className="flex flex-col items-start p-4 rounded-2xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 transition-all active:scale-95"
         >
-          <div className="p-2 bg-blue-500/10 text-blue-400 rounded-lg mb-3">
+          <div className="p-2 bg-blue-500/10 text-blue-400 rounded-lg mb-2.5">
             <FolderUp className="w-5 h-5" />
           </div>
           <h3 className="font-semibold text-zinc-100 text-sm">File Share</h3>
-          <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Send files to PC</p>
+          <p className="text-xs text-zinc-500 mt-0.5 text-left leading-relaxed">Send files & photos</p>
         </button>
 
         <button 
-          onClick={() => onNavigate('share')}
-          className="flex flex-col items-start p-4 rounded-2xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 transition-all active:scale-95"
-        >
-          <div className="p-2 bg-pink-500/10 text-pink-400 rounded-lg mb-3">
-            <ImageIcon className="w-5 h-5" />
-          </div>
-          <h3 className="font-semibold text-zinc-100 text-sm">Photos</h3>
-          <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Share photos</p>
-        </button>
-
-        <button 
-          onClick={() => onNavigate('share')}
-          className="flex flex-col items-start p-4 rounded-2xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 transition-all active:scale-95"
-        >
-          <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg mb-3">
-            <Link className="w-5 h-5" />
-          </div>
-          <h3 className="font-semibold text-zinc-100 text-sm">Quick Share</h3>
-          <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Send links & text</p>
-        </button>
-
-        <button 
+          id="btn-quick-media"
           onClick={() => onNavigate('media')}
           className="flex flex-col items-start p-4 rounded-2xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 transition-all active:scale-95"
         >
-          <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg mb-3">
+          <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg mb-2.5">
             <MonitorPlay className="w-5 h-5" />
           </div>
           <h3 className="font-semibold text-zinc-100 text-sm">Media</h3>
-          <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">Control media</p>
+          <p className="text-xs text-zinc-500 mt-0.5 text-left leading-relaxed">Control playback & volume</p>
         </button>
 
         <button 
-          id="btn-quick-projector"
-          onClick={() => onNavigate('projector')}
+          id="btn-quick-laptop-qr"
+          onClick={() => onOpenConnectionModal?.('qr_host')}
           className="flex flex-col items-start p-4 rounded-2xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 transition-all active:scale-95"
         >
-          <div className="p-2 bg-purple-500/10 text-purple-400 rounded-lg mb-3">
-            <MonitorUp className="w-5 h-5" />
+          <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg mb-2.5">
+            <QrCode className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold text-zinc-100 text-sm">Projector</h3>
-          <p className="text-xs text-zinc-500 mt-1 text-left leading-relaxed">View PC screen</p>
+          <h3 className="font-semibold text-zinc-100 text-sm">Laptop QR</h3>
+          <p className="text-xs text-zinc-500 mt-0.5 text-left leading-relaxed">Show pairing QR code</p>
         </button>
       </div>
 

@@ -306,29 +306,46 @@ export const WindowsHelperModal: React.FC<WindowsHelperModalProps> = ({ isOpen, 
             <div className="space-y-4 leading-relaxed">
               {/* 1-Click Launchers (Most convenient) */}
               <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-950/60 via-zinc-900 to-indigo-950/40 border border-indigo-500/40 space-y-3">
-                <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs uppercase tracking-wider">
-                  <Terminal className="w-4 h-4 text-indigo-400" />
-                  <span>1-Click CMD Launcher (Recommended)</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs uppercase tracking-wider">
+                    <Terminal className="w-4 h-4 text-indigo-400" />
+                    <span>1-Click Windows Setup (Recommended)</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
+                    Green CMD
+                  </span>
                 </div>
-                <p className="text-[11px] text-zinc-300">
-                  Just download and double-click. A black Command Prompt (CMD) window will open, showing your Laptop IP and 6-digit PIN:
+                
+                <a
+                  id="btn-modal-download-zip"
+                  href="/WebMouse-Windows.zip"
+                  download="WebMouse-Windows.zip"
+                  className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-600/25"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>📦 Download WebMouse (ZIP - Recommended)</span>
+                </a>
+
+                <p className="text-[11px] text-zinc-400 text-center">
+                  Or download individual files into the same folder:
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+
+                <div className="grid grid-cols-2 gap-2 pt-0.5">
                   <a
                     href="/run_webmouse.bat"
                     download="run_webmouse.bat"
-                    className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-md"
+                    className="py-2 px-3 bg-zinc-800 hover:bg-zinc-700 active:scale-98 text-zinc-200 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 border border-zinc-700 transition-all shadow-sm"
                   >
-                    <Download className="w-4 h-4" />
-                    <span>Download run_webmouse.bat</span>
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>run_webmouse.bat</span>
                   </a>
                   <a
-                    href="/install_webmouse.bat"
-                    download="install_webmouse.bat"
-                    className="py-2.5 px-3 bg-zinc-800 hover:bg-zinc-700 active:scale-98 text-zinc-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 border border-zinc-700 transition-all shadow-sm"
+                    href="/webmouse_server.py"
+                    download="webmouse_server.py"
+                    className="py-2 px-3 bg-zinc-800 hover:bg-zinc-700 active:scale-98 text-zinc-200 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 border border-zinc-700 transition-all shadow-sm"
                   >
-                    <Download className="w-4 h-4 text-emerald-400" />
-                    <span>Auto-Installer (.bat)</span>
+                    <Download className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>webmouse_server.py</span>
                   </a>
                 </div>
               </div>

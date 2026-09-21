@@ -12,7 +12,6 @@ import { KeyboardTab } from './components/KeyboardTab';
 import { ShareTab } from './components/ShareTab';
 import { MediaTab } from './components/MediaTab';
 import { SettingsTab } from './components/SettingsTab';
-import { ScreenProjectorTab } from './components/ScreenProjectorTab';
 import { ConnectionModal } from './components/ConnectionModal';
 import { WindowsHelperModal } from './components/WindowsHelperModal';
 import { AppSettings, ConnectionConfig, ConnectionStatus, ConnectedDeviceInfo, LogEntry, OutgoingMessage } from './types';
@@ -89,8 +88,8 @@ export default function App() {
     }
   });
 
-  // Tab navigation: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings' | 'projector'
-  const [activeTab, setActiveTab] = useState<'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings' | 'projector'>('home');
+  // Tab navigation: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings'
+  const [activeTab, setActiveTab] = useState<'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings'>('home');
 
   const [pairedDevice, setPairedDevice] = useState<ConnectedDeviceInfo | null>(() => {
     try {
@@ -113,10 +112,10 @@ export default function App() {
 
   // Modals
   const [isConnectionModalOpen, setIsConnectionModalOpen] = useState(false);
-  const [connectionModalView, setConnectionModalView] = useState<'normal' | 'scanner' | 'qr_host' | 'manual_pin'>('normal');
+  const [connectionModalView, setConnectionModalView] = useState<'normal' | 'scanner' | 'qr_host' | 'manual_pin' | 'download_helper'>('normal');
   const [isHelperGuideOpen, setIsHelperGuideOpen] = useState(false);
 
-  const openConnectionModal = (view: 'normal' | 'scanner' | 'qr_host' | 'manual_pin' = 'normal') => {
+  const openConnectionModal = (view: 'normal' | 'scanner' | 'qr_host' | 'manual_pin' | 'download_helper' = 'normal') => {
     setConnectionModalView(view);
     setIsConnectionModalOpen(true);
   };
@@ -261,8 +260,42 @@ export default function App() {
     };
   }, []);
 
-  // Auto-connect on mount if token and autoReconnect are set
+  // Auto-connect on mount if token and autoReconnect are set OR if URL query parameters exist (?host=...&token=...)
   useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlHost = urlParams.get('host')?.trim();
+        const urlPort = parseInt(urlParams.get('port') || '8765', 10);
+        const urlToken = (urlParams.get('token') || urlParams.get('qrToken') || '').trim();
+        const urlCode = (urlParams.get('code') || (urlToken && urlToken.length <= 8 ? urlToken : '') || '').trim();
+
+        if (urlHost) {
+          const directConfig: ConnectionConfig = {
+            ...config,
+            host: urlHost,
+            port: urlPort,
+            code: urlCode || urlToken,
+            qrToken: urlToken || undefined,
+            token: undefined,
+            autoReconnect: true,
+          };
+          updateConfig(directConfig);
+          // Clean up URL query parameters without reloading
+          const cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+          showToast('⚡ Direct Connecting to ' + urlHost + '...');
+          setTimeout(() => {
+            wsClientRef.current?.updateConfig(directConfig, settings.deviceName);
+            wsClientRef.current?.connect(false);
+          }, 100);
+          return;
+        }
+      }
+    } catch {
+      // ignore URL parsing error
+    }
+
     if (config.token && config.autoReconnect && wsClientRef.current) {
       wsClientRef.current.connect(true);
     }
@@ -333,7 +366,7 @@ export default function App() {
     showToast('Device forgotten');
   };
 
-  const handleTabChange = (tab: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings' | 'projector') => {
+  const handleTabChange = (tab: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'settings') => {
     triggerHaptic('light', settings.vibration);
     setActiveTab(tab);
   };
@@ -464,18 +497,6 @@ export default function App() {
           <MediaTab
             onSendMessage={handleSendMessage}
             settings={settings}
-          />
-        )}
-
-        {activeTab === 'projector' && (
-          <ScreenProjectorTab
-            onSendMessage={handleSendMessage}
-            lastIncomingMessage={lastIncomingMessage}
-            status={status}
-            deviceInfo={deviceInfo}
-            settings={settings}
-            isDark={isDark}
-            onExit={() => handleTabChange('home')}
           />
         )}
 

@@ -67,8 +67,6 @@ export type OutgoingMessage =
   | { type: 'incoming_file_reject'; transfer_id: string }
   | { type: 'file_chunk_ack'; transfer_id: string; chunk_index: number }
   | { type: 'file_transfer_cancel'; transfer_id: string }
-  | { type: 'start_projector' }
-  | { type: 'stop_projector' }
   | { type: 'webrtc_signaling'; signalType: 'offer' | 'answer' | 'ice_candidate' | 'stop'; payload?: any };
 
 export type IncomingMessage =
@@ -78,8 +76,6 @@ export type IncomingMessage =
   | { type: 'error'; message: string }
   | { type: 'notification'; message: string }
   | { type: 'clipboard_data'; text: string }
-  | { type: 'screen_frame'; image: string; timestamp?: number }
-  | { type: 'projector_status'; active: boolean; message?: string }
   | { type: 'file_transfer_accepted'; transfer_id: string }
   | { type: 'file_transfer_rejected'; transfer_id: string; reason: string }
   | { type: 'file_chunk_ack'; transfer_id: string; chunk_index: number }

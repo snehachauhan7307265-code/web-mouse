@@ -1062,21 +1062,23 @@ class WebMouseServer:
     def print_banner(self):
         lan_ip = get_local_ip()
         code_spaced = "  ".join(list(self.pairing_code))
-        print("\n" + "=" * 62)
+        direct_url = f"http://{lan_ip}:{self.port}/"
+        print("\n" + "=" * 64)
         print("           WEBMOUSE V1 — WINDOWS HELPER (CMD)")
-        print("=" * 62)
+        print("=" * 64)
         print(f"  [STATUS]           RUNNING (DO NOT CLOSE THIS WINDOW)")
         print(f"  [LAPTOP WI-FI IP]  {lan_ip}")
         print(f"  [PORT]             {self.port}")
-        print("=" * 62)
+        print("=" * 64)
         print(f"  >>> 6-DIGIT PAIRING PIN:   [  {code_spaced}  ] <<<")
-        print("=" * 62)
+        print("=" * 64)
         print("  HOW TO CONNECT FROM YOUR PHONE:")
-        print(f"  1. Open WebMouse on your phone browser")
-        print(f"  2. Tap 'Enter 6-Digit PIN' (or scan QR)")
-        print(f"  3. Enter IP: {lan_ip}  and  PIN: {self.pairing_code}")
-        print(f"  4. Tap 'Connect' — Your phone controls your mouse!")
-        print("=" * 62 + "\n")
+        print(f"  👉 FASTEST (NO PIN NEEDED):")
+        print(f"     Open your phone camera/WebMouse and SCAN THE QR CODE.")
+        print(f"     Phone will connect DIRECTLY without entering any PIN!")
+        print(f"  👉 OR ENTER PIN MANUALLY:")
+        print(f"     Laptop IP: {lan_ip}   |   PIN: {self.pairing_code}")
+        print("=" * 64 + "\n")
 
     async def process_request(self, *args, **kwargs):
         """
