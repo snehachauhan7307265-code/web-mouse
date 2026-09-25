@@ -322,35 +322,50 @@ export const Touchpad: React.FC<TouchpadProps> = ({
 
   return (
     <div className="flex-1 flex flex-col h-full bg-zinc-950 select-none overflow-hidden relative">
-      {/* Small Sensitivity Control Bar */}
-      <div className="px-5 py-3 flex items-center justify-between bg-zinc-900/40 shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Sensitivity</span>
+      {/* Top Touchpad Options Bar (Cursor Speed & Acceleration) */}
+      <div className="px-4 py-2 flex items-center justify-between bg-zinc-900/60 border-b border-zinc-800/80 shrink-0 gap-2 overflow-x-auto">
+        {/* Cursor Speed */}
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mr-1">Speed</span>
+          <div className="flex items-center gap-1 bg-zinc-950 p-0.5 rounded-xl border border-zinc-800">
+            <button
+              onClick={() => onUpdateSettings({ pointerSpeed: 0.8 })}
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-colors ${
+                settings.pointerSpeed <= 0.8 ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              Low
+            </button>
+            <button
+              onClick={() => onUpdateSettings({ pointerSpeed: 1.0 })}
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-colors ${
+                settings.pointerSpeed > 0.8 && settings.pointerSpeed < 1.3 ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              Med
+            </button>
+            <button
+              onClick={() => onUpdateSettings({ pointerSpeed: 1.5 })}
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-colors ${
+                settings.pointerSpeed >= 1.3 ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              High
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5 bg-zinc-900 p-1 rounded-xl border border-zinc-800/80">
+
+        {/* Acceleration Toggle */}
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
-            onClick={() => onUpdateSettings({ pointerSensitivity: 0.8 })}
-            className={`px-3 py-1 rounded-lg text-[11px] font-medium transition-colors ${
-              settings.pointerSensitivity < 1.0 ? 'bg-indigo-500 text-white shadow-sm shadow-indigo-500/20' : 'text-zinc-400 hover:text-zinc-200'
+            onClick={() => onUpdateSettings({ pointerAcceleration: !settings.pointerAcceleration })}
+            className={`px-2.5 py-1 rounded-xl text-[10px] font-semibold transition-all border ${
+              settings.pointerAcceleration
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                : 'bg-zinc-800/80 text-zinc-400 border-zinc-700/60'
             }`}
           >
-            Low
-          </button>
-          <button
-            onClick={() => onUpdateSettings({ pointerSensitivity: 1.2 })}
-            className={`px-3 py-1 rounded-lg text-[11px] font-medium transition-colors ${
-              settings.pointerSensitivity >= 1.0 && settings.pointerSensitivity < 2.0 ? 'bg-indigo-500 text-white shadow-sm shadow-indigo-500/20' : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            Med
-          </button>
-          <button
-            onClick={() => onUpdateSettings({ pointerSensitivity: 2.2 })}
-            className={`px-3 py-1 rounded-lg text-[11px] font-medium transition-colors ${
-              settings.pointerSensitivity >= 2.0 ? 'bg-indigo-500 text-white shadow-sm shadow-indigo-500/20' : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            High
+            Accel: {settings.pointerAcceleration ? 'ON' : 'OFF'}
           </button>
         </div>
       </div>

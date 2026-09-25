@@ -1496,6 +1496,20 @@ class WebMouseServer:
                             "type": "auth_result",
                             "success": True,
                             "computerName": socket.gethostname(),
+                            "deviceType": "windows",
+                            "platform": "windows",
+                            "capabilities": [
+                                "mouse",
+                                "keyboard",
+                                "media",
+                                "presentation",
+                                "file_transfer",
+                                "quick_share",
+                                "screen_sender",
+                                "custom_controls",
+                                "clipboard_sync",
+                                "tv_remote"
+                            ],
                             "screenWidth": self.screen_width,
                             "screenHeight": self.screen_height,
                             "message": "Authentication successful"
@@ -1688,6 +1702,62 @@ class WebMouseServer:
                         print(f"QUICK CONTROL: {action}")
                     except Exception as e:
                         print(f"Error quick control: {e}")
+
+                # 17b. TV Remote Control (Universal D-Pad & Navigation)
+                elif msg_type == "tv_remote":
+                    action = str(data.get("action", "")).lower()
+                    try:
+                        if action == "up":
+                            pyautogui.press("up")
+                        elif action == "down":
+                            pyautogui.press("down")
+                        elif action == "left":
+                            pyautogui.press("left")
+                        elif action == "right":
+                            pyautogui.press("right")
+                        elif action == "select":
+                            pyautogui.press("enter")
+                        elif action == "back":
+                            pyautogui.press("esc")
+                        elif action == "home":
+                            pyautogui.press("win")
+                        elif action == "menu":
+                            pyautogui.press("apps")
+                        elif action == "power":
+                            pyautogui.hotkey("win", "l")
+                        elif action == "vol_up":
+                            pyautogui.press("volumeup")
+                        elif action == "vol_down":
+                            pyautogui.press("volumedown")
+                        elif action == "mute":
+                            pyautogui.press("volumemute")
+                        print(f"TV REMOTE: {action}")
+                    except Exception as e:
+                        print(f"Error executing tv_remote action {action}: {e}")
+
+                # 17c. Device Info & Capability Query
+                elif msg_type == "get_device_info":
+                    await websocket.send(json.dumps({
+                        "type": "device_info",
+                        "name": socket.gethostname(),
+                        "deviceType": "windows",
+                        "platform": "windows",
+                        "capabilities": [
+                            "mouse", "keyboard", "media", "presentation", "file_transfer",
+                            "quick_share", "screen_sender", "custom_controls", "clipboard_sync", "tv_remote"
+                        ],
+                        "screenWidth": self.screen_width,
+                        "screenHeight": self.screen_height
+                    }))
+
+                elif msg_type == "get_capabilities":
+                    await websocket.send(json.dumps({
+                        "type": "capabilities",
+                        "capabilities": [
+                            "mouse", "keyboard", "media", "presentation", "file_transfer",
+                            "quick_share", "screen_sender", "custom_controls", "clipboard_sync", "tv_remote"
+                        ]
+                    }))
 
                 # 18. Link Sharing
                 elif msg_type == "share_link":

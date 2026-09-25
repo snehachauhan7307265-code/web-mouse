@@ -2,6 +2,7 @@ import { ConnectionConfig, ConnectionStatus, ConnectedDeviceInfo, OutgoingMessag
 
 export class WebSocketClient {
   private socket: WebSocket | null = null;
+  private broadcastChannel: BroadcastChannel | null = null;
   private config: ConnectionConfig;
   private deviceName: string;
   private status: ConnectionStatus = 'disconnected';
@@ -92,6 +93,46 @@ export class WebSocketClient {
       this.setStatus('error');
       this.addLog('err', 'Invalid Computer IP address or WebSocket URL');
       return;
+    }
+
+    // Support peer connection for local/browser Receiver Mode
+    const isReceiverChannel = rawHost.startsWith('receiver_') || rawHost === 'local_receiver' || rawHost === 'receiver_local' || rawHost.startsWith('peer:');
+    if (isReceiverChannel) {
+      this.setStatus(isAutoReconnect ? 'reconnecting' : 'connecting');
+      this.addLog('sys', `Connecting to Universal Receiver via local peer channel...`);
+      try {
+        if (this.broadcastChannel) {
+          try { this.broadcastChannel.close(); } catch (e) {}
+        }
+        this.broadcastChannel = new BroadcastChannel('webmouse_universal_channel');
+        this.broadcastChannel.onmessage = (event) => {
+          if (event.data && event.data.source === 'receiver') {
+            this.handleServerMessage(event.data.payload);
+          }
+        };
+
+        const codeToSend = (this.config.code?.trim() || (this.config.qrToken && this.config.qrToken.length <= 8 ? this.config.qrToken : '') || '').trim();
+        const tokenToSend = this.config.qrToken || this.config.token || codeToSend;
+
+        setTimeout(() => {
+          if (this.broadcastChannel) {
+            this.broadcastChannel.postMessage({
+              source: 'controller',
+              payload: {
+                type: 'auth',
+                code: codeToSend,
+                token: tokenToSend,
+                deviceName: this.deviceName || 'WebMouse Phone',
+              }
+            });
+          }
+        }, 100);
+        return;
+      } catch (e: any) {
+        this.setStatus('error');
+        this.addLog('err', `Failed to open receiver channel: ${e?.message}`);
+        return;
+      }
     }
 
     let wsUrl = '';
@@ -260,7 +301,9 @@ export class WebSocketClient {
   private startPingLoop() {
     if (this.pingInterval) clearInterval(this.pingInterval);
     this.pingInterval = setInterval(() => {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      const isOpenSocket = this.socket && this.socket.readyState === WebSocket.OPEN;
+      const isChannel = Boolean(this.broadcastChannel);
+      if (isOpenSocket || isChannel) {
         this.lastPingSent = Date.now();
         this.send({ type: 'ping', timestamp: this.lastPingSent });
       }
@@ -279,9 +322,24 @@ export class WebSocketClient {
   }
 
   /**
-   * Send JSON command to real Windows helper
+   * Send JSON command to real Windows helper or Universal Receiver
    */
   public send(msg: OutgoingMessage) {
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage({
+          source: 'controller',
+          payload: msg,
+        });
+        if (msg.type !== 'mouse_move' && msg.type !== 'ping') {
+          this.addLog('tx', JSON.stringify(msg));
+        }
+      } catch (e: any) {
+        this.addLog('err', `Channel send failed: ${e?.message}`);
+      }
+      return;
+    }
+
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return;
     }
@@ -304,6 +362,12 @@ export class WebSocketClient {
   public disconnect(dueToAuthFailure = false) {
     this.isIntentionalDisconnect = !dueToAuthFailure;
     this.clearTimers();
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.close();
+      } catch (e) {}
+      this.broadcastChannel = null;
+    }
     if (this.socket) {
       try {
         this.socket.close();

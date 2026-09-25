@@ -1,5 +1,5 @@
 import React from 'react';
-import { MousePointer2, Wifi, WifiOff, RefreshCw, AlertCircle, HelpCircle, Activity, Scan } from 'lucide-react';
+import { MousePointer2, Wifi, WifiOff, RefreshCw, AlertCircle, HelpCircle, Activity, Scan, Tv } from 'lucide-react';
 import { ConnectionStatus, ConnectedDeviceInfo } from '../types';
 
 interface HeaderProps {
@@ -9,6 +9,7 @@ interface HeaderProps {
   isActive?: boolean;
   onOpenConnectionModal: (view?: 'normal' | 'scanner' | 'qr_host' | 'manual_pin') => void;
   onOpenHelperGuide: () => void;
+  onSwitchToReceiverMode?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -18,6 +19,7 @@ export const Header: React.FC<HeaderProps> = ({
   isActive,
   onOpenConnectionModal,
   onOpenHelperGuide,
+  onSwitchToReceiverMode,
 }) => {
   const getStatusBadge = () => {
     switch (status) {
@@ -91,6 +93,18 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right controls */}
       <div className="flex items-center gap-1.5">
+        {onSwitchToReceiverMode && (
+          <button
+            id="btn-switch-receiver-mode"
+            onClick={onSwitchToReceiverMode}
+            className="p-1.5 px-2 bg-zinc-800/90 hover:bg-zinc-700 text-amber-400 hover:text-amber-300 border border-zinc-700/60 rounded-lg flex items-center gap-1 text-[11px] font-semibold shadow-sm transition-all active:scale-95"
+            title="Switch this device to TV / Smart Board Receiver Mode"
+          >
+            <Tv className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Receiver</span>
+          </button>
+        )}
+
         {status !== 'connected' && (
           <button
             id="btn-header-quick-scan"

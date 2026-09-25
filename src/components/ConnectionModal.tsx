@@ -97,10 +97,11 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
   const handleScan = (data: any) => {
     setShowScanner(false);
-    const scannedHost = (data.host || '').trim();
+    const scannedHost = (data.host || (data.receiverId ? 'receiver_local' : '') || '').trim();
     const scannedPort = parseInt(data.port, 10) || 8765;
-    const scannedCode = (data.code || (data.token && String(data.token).length <= 8 ? data.token : '') || '').trim();
+    const scannedCode = (data.code || data.pin || (data.token && String(data.token).length <= 8 ? data.token : '') || '').trim();
     const scannedToken = (data.token || data.qrToken || '').trim();
+    const scannedName = data.name || data.computerName || (data.type === 'android_tv' ? 'Living Room TV' : data.type === 'smart_board' ? 'Classroom Board' : 'My Laptop');
 
     if (scannedHost) setHost(scannedHost);
     if (scannedPort) setPort(scannedPort.toString());
@@ -114,7 +115,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         code: scannedCode || scannedToken, // Keep code populated so password-only and token servers both work!
         qrToken: scannedToken,
         token: undefined, // Clear old token until server grants fresh permanent token
-        lastComputerName: data.computerName || 'My Laptop',
+        lastComputerName: scannedName,
         autoReconnect: true, // Always auto-reconnect on successful scan
       });
       onClose();

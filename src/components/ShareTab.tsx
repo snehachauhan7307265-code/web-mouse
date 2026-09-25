@@ -1,5 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { Send, Link2, FileUp, Image as ImageIcon, ClipboardCopy, X, CheckCircle, AlertCircle, XCircle } from 'lucide-react';
+import { 
+  Send, Link2, FileUp, Image as ImageIcon, ClipboardCopy, X, CheckCircle, 
+  AlertCircle, XCircle, RefreshCw, FolderDown, ShieldCheck, File, Clock,
+  ExternalLink, Sparkles, Copy, Check
+} from 'lucide-react';
 import { OutgoingMessage, AppSettings } from '../types';
 import { triggerHaptic } from '../services/websocketService';
 import { TransferTask } from '../hooks/useFileTransfer';
@@ -21,9 +25,10 @@ export const ShareTab: React.FC<ShareTabProps> = ({
   onStartUpload,
   onCancelTransfer
 }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'files' | 'quickshare'>('files');
   const [textInput, setTextInput] = useState('');
   const [linkInput, setLinkInput] = useState('');
-  const [activeView, setActiveView] = useState<'menu' | 'text' | 'link' | 'file' | 'history'>('menu');
+  const [copiedNote, setCopiedNote] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleShareText = () => {
@@ -31,7 +36,6 @@ export const ShareTab: React.FC<ShareTabProps> = ({
     triggerHaptic('medium', settings.vibration);
     onSendMessage({ type: 'share_text', text: textInput });
     setTextInput('');
-    setActiveView('menu');
   };
 
   const handleShareLink = () => {
@@ -43,7 +47,6 @@ export const ShareTab: React.FC<ShareTabProps> = ({
     triggerHaptic('medium', settings.vibration);
     onSendMessage({ type: 'share_link', url });
     setLinkInput('');
-    setActiveView('menu');
   };
 
   const handleGetClipboard = () => {
@@ -56,7 +59,7 @@ export const ShareTab: React.FC<ShareTabProps> = ({
     if (files.length === 0) return;
 
     triggerHaptic('heavy', settings.vibration);
-    files.forEach(file => {
+    files.forEach((file) => {
       onStartUpload(file);
     });
     
@@ -65,189 +68,273 @@ export const ShareTab: React.FC<ShareTabProps> = ({
     }
   };
 
-  if (activeView === 'text') {
-    return (
-      <div className="flex-1 flex flex-col p-4 bg-zinc-950 text-white animate-in slide-in-from-right-4">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold">Share Text</h2>
-          <button onClick={() => setActiveView('menu')} className="p-2 bg-zinc-900 rounded-full"><X className="w-5 h-5"/></button>
-        </div>
-        <textarea
-          value={textInput}
-          onChange={(e) => setTextInput(e.target.value)}
-          placeholder="Type or paste text here to send to PC clipboard..."
-          className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none mb-4"
-        />
-        <button
-          onClick={handleShareText}
-          disabled={!textInput.trim()}
-          className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-2"
-        >
-          <Send className="w-5 h-5" /> Send to PC Clipboard
-        </button>
-      </div>
-    );
-  }
-
-  if (activeView === 'link') {
-    return (
-      <div className="flex-1 flex flex-col p-4 bg-zinc-950 text-white animate-in slide-in-from-right-4">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold">Share Link</h2>
-          <button onClick={() => setActiveView('menu')} className="p-2 bg-zinc-900 rounded-full"><X className="w-5 h-5"/></button>
-        </div>
-        <input
-          type="url"
-          value={linkInput}
-          onChange={(e) => setLinkInput(e.target.value)}
-          placeholder="https://example.com"
-          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 mb-4"
-        />
-        <button
-          onClick={handleShareLink}
-          disabled={!linkInput.trim()}
-          className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-bold flex items-center justify-center gap-2"
-        >
-          <Link2 className="w-5 h-5" /> Open Link on PC
-        </button>
-      </div>
-    );
-  }
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024 * 1024) {
+      return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
   return (
-    <div className="flex-1 flex flex-col p-4 bg-zinc-950 text-white overflow-y-auto">
-      <h2 className="text-2xl font-bold mb-6 mt-2 tracking-tight">Share to PC</h2>
-      
-      {/* Active File Transfers */}
-      <div className="flex flex-col gap-3 mb-6">
-        {transfers.filter(t => t.status !== 'waiting_for_approval').map(t => (
-          <div key={t.id} className={`p-4 border rounded-2xl flex flex-col gap-3 ${
-            t.status === 'error' ? 'bg-red-950/40 border-red-500/30' :
-            t.status === 'success' ? 'bg-green-950/40 border-green-500/30' :
-            'bg-zinc-900/60 border-zinc-800'
-          }`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-bold uppercase tracking-wider shrink-0">
-                    {t.direction === 'upload' ? 'Sent' : 'Received'}
-                  </span>
-                  <h3 className="font-bold text-sm text-zinc-100 truncate">{t.filename}</h3>
-                </div>
-                <p className="text-xs text-zinc-400 mt-1">
-                  {(t.size / 1024 / 1024).toFixed(2)} MB
-                  {(t.status === 'uploading' || t.status === 'downloading') && t.speedBytesPerSec > 0 && ` • ${(t.speedBytesPerSec / 1024 / 1024).toFixed(1)} MB/s`}
-                </p>
-              </div>
-              <div className="shrink-0 flex items-center gap-2">
-                {t.status === 'success' && <CheckCircle className="w-5 h-5 text-green-400" />}
-                {t.status === 'error' && <AlertCircle className="w-5 h-5 text-red-400" />}
-                {t.status === 'cancelled' && <XCircle className="w-5 h-5 text-zinc-500" />}
-                {t.status === 'pending' && <span className="text-xs text-zinc-500 font-semibold uppercase">Pending</span>}
-                {(t.status === 'uploading' || t.status === 'downloading' || t.status === 'pending') && (
-                  <button onClick={() => onCancelTransfer(t.id)} className="p-1.5 hover:bg-zinc-800 rounded-full text-zinc-400 transition-colors">
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-            
-            {(t.status === 'uploading' || t.status === 'downloading') && (
-              <div className="flex items-center gap-3">
-                <div className="flex-1 bg-zinc-950 rounded-full h-2 overflow-hidden">
-                  <div className="bg-indigo-500 h-2 rounded-full transition-all duration-300" style={{ width: `${t.progress}%` }}></div>
-                </div>
-                <span className="text-xs font-bold text-indigo-400 min-w-[32px] text-right">{t.progress}%</span>
-              </div>
-            )}
-            
-            {t.error && (
-              <p className="text-xs text-red-400">{t.error}</p>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 mb-6">
+    <div className="flex-1 flex flex-col bg-zinc-950 text-white overflow-y-auto select-none p-4 space-y-4 pb-8">
+      {/* Sub-tab navigation */}
+      <div className="flex items-center gap-1.5 p-1 bg-zinc-900/90 rounded-2xl border border-zinc-800 shrink-0">
         <button
-          onClick={() => setActiveView('text')}
-          className="p-4 bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 rounded-2xl flex flex-col items-center justify-center gap-3 border border-zinc-800/50 transition-colors"
+          onClick={() => setActiveSubTab('files')}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+            activeSubTab === 'files'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+              : 'text-zinc-400 hover:text-white'
+          }`}
         >
-          <div className="p-3 bg-blue-500/10 text-blue-400 rounded-full">
-            <ClipboardCopy className="w-6 h-6" />
-          </div>
-          <span className="font-semibold text-sm text-zinc-300">Text</span>
+          <FileUp className="w-4 h-4" />
+          <span>File Transfer</span>
         </button>
-
         <button
-          onClick={() => setActiveView('link')}
-          className="p-4 bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 rounded-2xl flex flex-col items-center justify-center gap-3 border border-zinc-800/50 transition-colors"
+          onClick={() => setActiveSubTab('quickshare')}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+            activeSubTab === 'quickshare'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+              : 'text-zinc-400 hover:text-white'
+          }`}
         >
-          <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-full">
-            <Link2 className="w-6 h-6" />
-          </div>
-          <span className="font-semibold text-sm text-zinc-300">Link</span>
-        </button>
-
-        <button
-          onClick={() => { fileInputRef.current?.setAttribute('accept', 'image/*'); fileInputRef.current?.click(); }}
-          className="p-4 bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 rounded-2xl flex flex-col items-center justify-center gap-3 border border-zinc-800/50 transition-colors"
-        >
-          <div className="p-3 bg-purple-500/10 text-purple-400 rounded-full">
-            <ImageIcon className="w-6 h-6" />
-          </div>
-          <span className="font-semibold text-sm text-zinc-300">Photo</span>
-        </button>
-
-        <button
-          onClick={() => { fileInputRef.current?.removeAttribute('accept'); fileInputRef.current?.click(); }}
-          className="p-4 bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 rounded-2xl flex flex-col items-center justify-center gap-3 border border-zinc-800/50 transition-colors"
-        >
-          <div className="p-3 bg-orange-500/10 text-orange-400 rounded-full">
-            <FileUp className="w-6 h-6" />
-          </div>
-          <span className="font-semibold text-sm text-zinc-300">File</span>
+          <Link2 className="w-4 h-4" />
+          <span>Quick Share</span>
         </button>
       </div>
 
-      <input 
-        type="file" 
-        multiple
-        className="hidden" 
-        ref={fileInputRef}
-        onChange={handleFileSelect}
-      />
-
-      {/* Clipboard Sync Area */}
-      <div className="mt-2 space-y-3">
-        <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-widest px-1">Clipboard Tools</h3>
-        
-        <div className="bg-zinc-900 border border-zinc-800/50 rounded-2xl overflow-hidden">
-          <div className="p-4 flex items-center justify-between border-b border-zinc-800/50">
-            <div className="flex flex-col">
-              <span className="font-medium text-sm text-zinc-200">Auto-Sync Clipboard</span>
-              <span className="text-xs text-zinc-500">Opt-in beta feature</span>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings.clipboardSync || false}
-                onChange={(e) => onUpdateSettings({ clipboardSync: e.target.checked })}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-500"></div>
-            </label>
-          </div>
-          
-          <button 
-            onClick={handleGetClipboard}
-            className="w-full p-4 flex items-center justify-between bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 transition-colors text-left"
+      {/* 1. FILE TRANSFER TAB */}
+      {activeSubTab === 'files' && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          {/* Upload Drop Zone / Picker Card */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full p-6 rounded-3xl border-2 border-dashed border-indigo-500/30 hover:border-indigo-500/60 bg-gradient-to-b from-indigo-950/20 to-zinc-900/40 flex flex-col items-center justify-center text-center cursor-pointer transition-all active:scale-[0.99] group shadow-inner space-y-3"
           >
-            <span className="font-medium text-sm text-zinc-200">Get text from PC Clipboard</span>
-            <ClipboardCopy className="w-4 h-4 text-zinc-400" />
-          </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <div className="p-4 bg-indigo-500/10 text-indigo-400 rounded-2xl group-hover:scale-110 transition-transform">
+              <FileUp className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-white">Send Files to PC</h3>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Tap to pick photos, videos, or documents
+              </p>
+            </div>
+            <span className="px-3 py-1 bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 rounded-full text-[11px] font-semibold">
+              Supports multiple files
+            </span>
+          </div>
+
+          {/* Security sandbox info */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl text-[11px] text-zinc-400">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="truncate">Saved safely to PC: <strong className="text-zinc-300 font-mono">Downloads/WebMouse</strong></span>
+          </div>
+
+          {/* Transfers List */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <h4 className="font-bold text-xs text-zinc-300 uppercase tracking-wider">
+                Transfer Activity ({transfers.length})
+              </h4>
+            </div>
+
+            {transfers.length === 0 ? (
+              <div className="p-8 text-center bg-zinc-900/40 border border-zinc-800/60 rounded-2xl text-xs text-zinc-500">
+                No active or recent transfers
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {transfers.map((t) => {
+                  const progressPct = Math.round(t.progress * 100);
+                  const isFinished = t.status === 'success';
+                  const isError = t.status === 'error';
+                  const isCancelled = t.status === 'cancelled';
+                  const isRunning = t.status === 'uploading' || t.status === 'downloading';
+
+                  return (
+                    <div
+                      key={t.id}
+                      className={`p-4 rounded-2xl border transition-all ${
+                        isFinished
+                          ? 'bg-emerald-950/20 border-emerald-500/30'
+                          : isError
+                          ? 'bg-rose-950/20 border-rose-500/30'
+                          : isCancelled
+                          ? 'bg-zinc-900/40 border-zinc-800'
+                          : 'bg-zinc-900/80 border-indigo-500/30 shadow-md'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div
+                            className={`p-2 rounded-xl shrink-0 ${
+                              isFinished
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : isError
+                                ? 'bg-rose-500/20 text-rose-400'
+                                : 'bg-indigo-500/20 text-indigo-400'
+                            }`}
+                          >
+                            <File className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h5 className="font-bold text-xs text-white truncate">
+                              {t.filename}
+                            </h5>
+                            <p className="text-[10px] text-zinc-400 mt-0.5">
+                              {formatSize((t.size * progressPct) / 100)} / {formatSize(t.size)}
+                              {isRunning && t.speedBytesPerSec > 0 && (
+                                <span className="text-indigo-400 font-mono ml-1.5">
+                                  • {(t.speedBytesPerSec / (1024 * 1024)).toFixed(1)} MB/s
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Status Icon & Cancel Action */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          {isFinished && (
+                            <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
+                              <CheckCircle className="w-4 h-4" />
+                              <span>Done</span>
+                            </span>
+                          )}
+                          {isError && (
+                            <span className="flex items-center gap-1 text-[11px] font-semibold text-rose-400">
+                              <AlertCircle className="w-4 h-4" />
+                              <span>Failed</span>
+                            </span>
+                          )}
+                          {isCancelled && (
+                            <span className="text-[11px] text-zinc-500">Cancelled</span>
+                          )}
+                          {isRunning && (
+                            <button
+                              onClick={() => onCancelTransfer(t.id)}
+                              className="p-1 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-lg transition-colors"
+                              title="Cancel transfer"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Progress Bar */}
+                      {isRunning && (
+                        <div className="mt-3 space-y-1">
+                          <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                            <div
+                              className="bg-indigo-500 h-full rounded-full transition-all duration-150"
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between text-[10px] text-zinc-400 font-mono">
+                            <span>Transferring...</span>
+                            <span>{progressPct}%</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* 2. QUICK SHARE TAB */}
+      {activeSubTab === 'quickshare' && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          {/* Send Web Link Card */}
+          <div className="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-4 space-y-3 shadow-md">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl">
+                <Link2 className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="font-bold text-xs text-white">Send URL to PC</h4>
+                <p className="text-[10px] text-zinc-400">Opens immediately in PC default browser</p>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={linkInput}
+                onChange={(e) => setLinkInput(e.target.value)}
+                placeholder="https://example.com or youtube link"
+                className="flex-1 bg-zinc-950 border border-zinc-700 rounded-2xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+              />
+              <button
+                onClick={handleShareLink}
+                disabled={!linkInput.trim()}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-2xl font-semibold text-xs transition-all active:scale-95 shadow-md shadow-indigo-600/20 shrink-0"
+              >
+                Open on PC
+              </button>
+            </div>
+          </div>
+
+          {/* Send Text / Notes to Clipboard */}
+          <div className="bg-zinc-900/80 border border-zinc-800 rounded-3xl p-4 space-y-3 shadow-md">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
+                <ClipboardCopy className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="font-bold text-xs text-white">Send Text or Notes</h4>
+                <p className="text-[10px] text-zinc-400">Copies directly to PC clipboard</p>
+              </div>
+            </div>
+
+            <textarea
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              placeholder="Paste or type text, codes, addresses, or notes to send to Windows clipboard..."
+              className="w-full bg-zinc-950 border border-zinc-700 rounded-2xl p-3 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 resize-none h-24 shadow-inner"
+            />
+
+            <button
+              onClick={handleShareText}
+              disabled={!textInput.trim()}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white rounded-2xl font-semibold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-md shadow-emerald-600/20"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Copy to PC Clipboard</span>
+            </button>
+          </div>
+
+          {/* PC -> Phone Clipboard Fetch */}
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-3xl p-4 flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-blue-500/20 text-blue-400 rounded-xl">
+                <Copy className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="font-bold text-xs text-white">Get PC Clipboard</h4>
+                <p className="text-[10px] text-zinc-400">Retrieve current copied text from Windows</p>
+              </div>
+            </div>
+            <button
+              onClick={handleGetClipboard}
+              className="py-2 px-3 bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-200 rounded-xl text-xs font-semibold border border-zinc-700 transition-all shadow-sm"
+            >
+              Fetch
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

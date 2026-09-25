@@ -1767,7 +1767,71 @@ class WebMouseServer:
                     except Exception as e:
                         print(f"Error presentation control: {e}")
 
-                # 17. Quick Controls
+                # 17. Quick Controls & Real Screenshot Capture
+                elif msg_type == "take_screenshot" or (msg_type == "quick_control" and str(data.get("action", "")).lower() == "screenshot"):
+                    try:
+                        import datetime, io, base64
+                        img = None
+                        try:
+                            from PIL import ImageGrab
+                            img = ImageGrab.grab()
+                        except Exception:
+                            try:
+                                import mss
+                                with mss.mss() as sct:
+                                    monitor = sct.monitors[1]
+                                    sct_img = sct.grab(monitor)
+                                    from PIL import Image
+                                    img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                            except Exception:
+                                pass
+
+                        if img:
+                            ss_dir = Path.home() / "Downloads" / "WebMouse" / "Screenshots"
+                            ss_dir.mkdir(parents=True, exist_ok=True)
+                            now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                            ss_path = ss_dir / f"Screenshot_{now_str}.jpg"
+                            img.save(ss_path, "JPEG", quality=85)
+
+                            # Scale for quick WebSocket phone preview
+                            max_dim = 1400
+                            preview_img = img
+                            if img.width > max_dim or img.height > max_dim:
+                                scale = min(max_dim / img.width, max_dim / img.height)
+                                preview_img = img.resize((int(img.width * scale), int(img.height * scale)))
+
+                            buf = io.BytesIO()
+                            preview_img.save(buf, "JPEG", quality=75)
+                            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+                            await websocket.send(json.dumps({
+                                "type": "screenshot_result",
+                                "success": True,
+                                "image": f"data:image/jpeg;base64,{b64}",
+                                "filename": ss_path.name,
+                                "timestamp": int(time.time() * 1000)
+                            }))
+                            print(f"[SCREENSHOT] Captured and sent to phone: {ss_path.name}")
+                        else:
+                            # Fallback: trigger Windows printscreen key
+                            pyautogui.press("printscreen")
+                            await websocket.send(json.dumps({
+                                "type": "screenshot_result",
+                                "success": False,
+                                "message": "Screenshot key triggered on Windows PC."
+                            }))
+                    except Exception as e:
+                        print(f"Error capturing screenshot: {e}")
+                        try:
+                            pyautogui.press("printscreen")
+                        except Exception:
+                            pass
+                        await websocket.send(json.dumps({
+                            "type": "screenshot_result",
+                            "success": False,
+                            "message": str(e)
+                        }))
+
                 elif msg_type == "quick_control":
                     action = str(data.get("action", "")).lower()
                     try:
@@ -1776,10 +1840,18 @@ class WebMouseServer:
                         elif action == "lock":
                             import ctypes
                             ctypes.windll.user32.LockWorkStation()
-                        elif action == "screenshot":
-                            pyautogui.press("printscreen")
                         elif action == "alttab":
                             pyautogui.hotkey("alt", "tab")
+                        elif action == "taskmgr":
+                            pyautogui.hotkey("ctrl", "shift", "esc")
+                        elif action == "explorer":
+                            pyautogui.hotkey("win", "e")
+                        elif action == "run":
+                            pyautogui.hotkey("win", "r")
+                        elif action == "taskview":
+                            pyautogui.hotkey("win", "tab")
+                        elif action == "snip":
+                            pyautogui.hotkey("win", "shift", "s")
                         print(f"QUICK CONTROL: {action}")
                     except Exception as e:
                         print(f"Error quick control: {e}")
@@ -1791,11 +1863,25 @@ class WebMouseServer:
                         print(f"OPENING LINK: {url}")
                         webbrowser.open(url)
 
-                # 19. Text Sharing (Copy to PC Clipboard)
+                # 19. Text Sharing (Copy to PC Clipboard with clip.exe fallback)
                 elif msg_type == "share_text":
                     text = str(data.get("text", ""))
-                    if text and pyperclip:
-                        pyperclip.copy(text)
+                    if text:
+                        copied = False
+                        if pyperclip:
+                            try:
+                                pyperclip.copy(text)
+                                copied = True
+                            except Exception:
+                                pass
+                        if not copied:
+                            try:
+                                import subprocess
+                                proc = subprocess.Popen(['clip'], stdin=subprocess.PIPE, shell=True)
+                                proc.communicate(text.encode('utf-16le'))
+                                copied = True
+                            except Exception:
+                                pass
                         print(f"COPIED TEXT TO CLIPBOARD: {text[:20]}...")
                         await websocket.send(json.dumps({
                             "type": "notification",
