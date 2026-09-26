@@ -9,7 +9,7 @@ interface WindowsHelperModalProps {
 
 const HELPER_SERVER_CODE = `#!/usr/bin/env python3
 """
-WebMouse V1 — Windows Local Helper Server
+WebMouse V2 — Windows Local Helper Server
 =========================================
 Turns an Android or iPhone smartphone into a wireless mouse & keyboard
 for a Windows computer over the same local Wi-Fi network.

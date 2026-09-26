@@ -23,7 +23,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   onOpenHelperGuide,
 }) => {
   const [showLogs, setShowLogs] = useState(false);
-  const [savedSuccess, setSavedSuccess] = useState(false);
 
   const handleResetDefaults = () => {
     onUpdateSettings({
@@ -40,32 +39,32 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-zinc-950 select-none overflow-y-auto p-4 space-y-4 text-zinc-100">
+    <div className="flex-1 flex flex-col h-full bg-zinc-950 select-none overflow-y-auto p-4 sm:p-6 space-y-4 text-zinc-100 max-w-3xl mx-auto w-full pb-12">
       {/* Device & Identity Card */}
-      <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3 shadow-md">
+      <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3 shadow-md">
         <div className="flex items-center gap-2.5">
           <Smartphone className="w-5 h-5 text-indigo-400" />
           <h3 className="text-sm font-semibold text-white">Device Information</h3>
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-zinc-400">Device Name (Broadcast to PC)</label>
+          <label className="text-xs font-medium text-zinc-400">Device Name (Broadcast to target computers/TVs)</label>
           <input
             id="input-device-name"
             type="text"
             value={settings.deviceName}
             onChange={(e) => onUpdateSettings({ deviceName: e.target.value })}
-            placeholder="e.g. Sneha's Phone"
-            className="w-full bg-zinc-950 border border-zinc-700/80 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+            placeholder="e.g. Phone Controller"
+            className="w-full bg-zinc-950 border border-zinc-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 shadow-inner"
           />
         </div>
       </div>
 
       {/* Touchpad & Pointer Controls */}
-      <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-4 shadow-md">
+      <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-4 shadow-md">
         <div className="flex items-center gap-2.5">
           <Sliders className="w-5 h-5 text-indigo-400" />
-          <h3 className="text-sm font-semibold text-white">Pointer & Touchpad</h3>
+          <h3 className="text-sm font-semibold text-white">Pointer & Touchpad Preferences</h3>
         </div>
 
         {/* Pointer Sensitivity */}
@@ -75,268 +74,144 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <span className="font-mono text-indigo-400 font-bold">{settings.pointerSensitivity.toFixed(1)}x</span>
           </div>
           <div className="flex gap-2">
-            <button 
-              onClick={() => onUpdateSettings({ pointerSensitivity: 0.8 })}
-              className={`flex-1 py-1 text-xs rounded-lg border ${settings.pointerSensitivity < 1.0 ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}
-            >
-              Low
-            </button>
-            <button 
-              onClick={() => onUpdateSettings({ pointerSensitivity: 1.2 })}
-              className={`flex-1 py-1 text-xs rounded-lg border ${settings.pointerSensitivity >= 1.0 && settings.pointerSensitivity < 2.0 ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}
-            >
-              Medium
-            </button>
-            <button 
-              onClick={() => onUpdateSettings({ pointerSensitivity: 2.2 })}
-              className={`flex-1 py-1 text-xs rounded-lg border ${settings.pointerSensitivity >= 2.0 ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}
-            >
-              High
-            </button>
+            {[0.8, 1.2, 2.0].map((sens, idx) => {
+              const label = idx === 0 ? 'Low' : idx === 1 ? 'Medium' : 'High';
+              const isSelected = Math.abs(settings.pointerSensitivity - sens) < 0.3;
+              return (
+                <button 
+                  key={label}
+                  onClick={() => onUpdateSettings({ pointerSensitivity: sens })}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-xl border transition-colors ${
+                    isSelected ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
-          <input
-            id="setting-pointer-sensitivity"
-            type="range"
-            min="0.5"
-            max="3.0"
-            step="0.1"
-            value={settings.pointerSensitivity}
-            onChange={(e) => onUpdateSettings({ pointerSensitivity: parseFloat(e.target.value) })}
-            className="w-full accent-indigo-500 cursor-pointer"
-          />
         </div>
 
-        {/* Pointer Speed Multiplier */}
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs">
-            <span className="text-zinc-300">Pointer Speed</span>
-            <span className="font-mono text-indigo-400 font-bold">{settings.pointerSpeed.toFixed(1)}x</span>
-          </div>
-          <input
-            id="setting-pointer-speed"
-            type="range"
-            min="0.5"
-            max="2.5"
-            step="0.1"
-            value={settings.pointerSpeed}
-            onChange={(e) => onUpdateSettings({ pointerSpeed: parseFloat(e.target.value) })}
-            className="w-full accent-indigo-500 cursor-pointer"
-          />
-        </div>
-
-        {/* Pointer Acceleration Toggle */}
-        <div className="flex items-center justify-between py-1 border-t border-zinc-800/80 pt-3">
+        {/* Acceleration Toggle */}
+        <div className="flex items-center justify-between pt-1">
           <div>
-            <p className="text-xs font-medium text-zinc-200">Pointer Acceleration</p>
-            <p className="text-[11px] text-zinc-400">Dynamic curve for high precision vs rapid sweeps</p>
+            <p className="text-xs font-medium text-white">Pointer Acceleration</p>
+            <p className="text-[11px] text-zinc-500">Smooth acceleration curves for precise micro-movements</p>
           </div>
-          <input
-            id="setting-pointer-accel"
-            type="checkbox"
-            checked={settings.pointerAcceleration}
-            onChange={(e) => onUpdateSettings({ pointerAcceleration: e.target.checked })}
-            className="w-4 h-4 accent-indigo-500 rounded bg-zinc-900 border-zinc-700 cursor-pointer"
-          />
+          <button
+            onClick={() => onUpdateSettings({ pointerAcceleration: !settings.pointerAcceleration })}
+            className={`w-11 h-6 rounded-full transition-colors relative ${
+              settings.pointerAcceleration ? 'bg-indigo-600' : 'bg-zinc-800'
+            }`}
+          >
+            <div
+              className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                settings.pointerAcceleration ? 'left-6' : 'left-1'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Scroll Inversion */}
+        <div className="flex items-center justify-between pt-1">
+          <div>
+            <p className="text-xs font-medium text-white">Invert Scroll Direction</p>
+            <p className="text-[11px] text-zinc-500">Reverse natural two-finger scroll</p>
+          </div>
+          <button
+            onClick={() => onUpdateSettings({ invertScroll: !settings.invertScroll })}
+            className={`w-11 h-6 rounded-full transition-colors relative ${
+              settings.invertScroll ? 'bg-indigo-600' : 'bg-zinc-800'
+            }`}
+          >
+            <div
+              className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                settings.invertScroll ? 'left-6' : 'left-1'
+              }`}
+            />
+          </button>
         </div>
       </div>
 
-      {/* Scroll & Haptics */}
-      <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-4 shadow-md">
+      {/* Haptics & Sound */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3 shadow-md">
         <div className="flex items-center gap-2.5">
           <Vibrate className="w-5 h-5 text-indigo-400" />
-          <h3 className="text-sm font-semibold text-white">Scrolling & Haptics</h3>
+          <h3 className="text-sm font-semibold text-white">Haptic & Tactile Feedback</h3>
         </div>
 
-        {/* Scroll Sensitivity */}
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs">
-            <span className="text-zinc-300">Scroll Sensitivity</span>
-            <span className="font-mono text-indigo-400 font-bold">{settings.scrollSensitivity.toFixed(1)}x</span>
-          </div>
-          <input
-            id="setting-scroll-sensitivity"
-            type="range"
-            min="0.5"
-            max="3.0"
-            step="0.1"
-            value={settings.scrollSensitivity}
-            onChange={(e) => onUpdateSettings({ scrollSensitivity: parseFloat(e.target.value) })}
-            className="w-full accent-indigo-500 cursor-pointer"
-          />
-        </div>
-
-        {/* Invert Scroll */}
-        <div className="flex items-center justify-between border-t border-zinc-800/80 pt-3">
+        <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-zinc-200">Invert Scroll Direction</p>
-            <p className="text-[11px] text-zinc-400">Reverses swipe up / swipe down action</p>
+            <p className="text-xs font-medium text-white">Vibration Feedback</p>
+            <p className="text-[11px] text-zinc-500">Subtle vibration pulses on clicks and gestures</p>
           </div>
-          <input
-            id="setting-invert-scroll"
-            type="checkbox"
-            checked={settings.invertScroll}
-            onChange={(e) => onUpdateSettings({ invertScroll: e.target.checked })}
-            className="w-4 h-4 accent-indigo-500 rounded bg-zinc-900 border-zinc-700 cursor-pointer"
-          />
-        </div>
-
-        {/* Click Sound Toggle */}
-        <div className="flex items-center justify-between border-t border-zinc-800/80 pt-3">
-          <div>
-            <p className="text-xs font-medium text-zinc-200">Click Sound</p>
-            <p className="text-[11px] text-zinc-400">Play an audible beep on clicks</p>
-          </div>
-          <input
-            id="setting-click-sound-toggle"
-            type="checkbox"
-            checked={settings.clickSound}
-            onChange={(e) => onUpdateSettings({ clickSound: e.target.checked })}
-            className="w-4 h-4 accent-indigo-500 rounded bg-zinc-900 border-zinc-700 cursor-pointer"
-          />
-        </div>
-
-        {/* Vibration Toggle */}
-        <div className="flex items-center justify-between border-t border-zinc-800/80 pt-3">
-          <div>
-            <p className="text-xs font-medium text-zinc-200">Vibration Haptic Feedback</p>
-            <p className="text-[11px] text-zinc-400">Tactile pulse on clicks, drag locks, and gestures</p>
-          </div>
-          <input
-            id="setting-vibration-toggle"
-            type="checkbox"
-            checked={settings.vibration}
-            onChange={(e) => {
-              const next = e.target.checked;
-              onUpdateSettings({ vibration: next });
-              triggerHaptic('medium', next);
-            }}
-            className="w-4 h-4 accent-indigo-500 rounded bg-zinc-900 border-zinc-700 cursor-pointer"
-          />
-        </div>
-
-        {/* Theme Toggle */}
-        <div className="flex items-center justify-between border-t border-zinc-800/80 pt-3">
-          <div>
-            <p className="text-xs font-medium text-zinc-200">App Theme</p>
-            <p className="text-[11px] text-zinc-400">Dark mode recommended for OLED power saving</p>
-          </div>
-          <div className="flex items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800">
-            <button
-              onClick={() => onUpdateSettings({ theme: 'dark' })}
-              className={`p-1.5 rounded-lg text-xs flex items-center gap-1 transition-colors ${
-                settings.theme === 'dark' ? 'bg-indigo-600 text-white' : 'text-zinc-400'
+          <button
+            onClick={() => onUpdateSettings({ vibration: !settings.vibration })}
+            className={`w-11 h-6 rounded-full transition-colors relative ${
+              settings.vibration ? 'bg-indigo-600' : 'bg-zinc-800'
+            }`}
+          >
+            <div
+              className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                settings.vibration ? 'left-6' : 'left-1'
               }`}
-            >
-              <Moon className="w-3.5 h-3.5" />
-              <span>Dark</span>
-            </button>
-            <button
-              onClick={() => onUpdateSettings({ theme: 'light' })}
-              className={`p-1.5 rounded-lg text-xs flex items-center gap-1 transition-colors ${
-                settings.theme === 'light' ? 'bg-indigo-600 text-white' : 'text-zinc-400'
-              }`}
-            >
-              <Sun className="w-3.5 h-3.5" />
-              <span>Light</span>
-            </button>
-          </div>
+            />
+          </button>
         </div>
       </div>
 
-      {/* Connection & Pairing Code Settings */}
-      <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3 shadow-md">
-        <div className="flex items-center gap-2.5">
-          <Shield className="w-5 h-5 text-indigo-400" />
-          <h3 className="text-sm font-semibold text-white">Default Connection Credentials</h3>
+      {/* Helper Script Guide */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3 shadow-md flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-white">Windows Helper Setup</h3>
+          <p className="text-xs text-zinc-400 mt-0.5">View instructions, Python script and troubleshooting</p>
         </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <label className="text-xs text-zinc-400">Computer IP</label>
-            <input
-              type="text"
-              value={config.host}
-              onChange={(e) => onUpdateConfig({ host: e.target.value })}
-              placeholder="e.g. 192.168.1.x"
-              className="w-full bg-zinc-950 border border-zinc-700/80 rounded-xl px-3 py-2 text-xs font-mono text-white"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs text-zinc-400">Pairing Code</label>
-            <input
-              type="text"
-              maxLength={6}
-              value={config.code}
-              onChange={(e) => onUpdateConfig({ code: e.target.value.replace(/\D/g, '') })}
-              placeholder="483921"
-              className="w-full bg-zinc-950 border border-zinc-700/80 rounded-xl px-3 py-2 text-xs font-mono tracking-widest text-white"
-            />
-          </div>
-        </div>
-
         <button
-          type="button"
           onClick={onOpenHelperGuide}
-          className="w-full mt-1 py-2 px-3 rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-indigo-300 flex items-center justify-center gap-2 transition-colors"
+          className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-zinc-200 text-xs font-semibold border border-zinc-700/80 transition-all active:scale-95"
         >
-          <Monitor className="w-4 h-4 text-indigo-400" />
-          <span>Windows Helper Setup Instructions & Code</span>
+          View Guide
         </button>
       </div>
 
-      {/* Live WebSocket Traffic Logs Console */}
-      <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3 shadow-md">
+      {/* Logs section */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3 shadow-md">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <Terminal className="w-5 h-5 text-indigo-400" />
-            <h3 className="text-sm font-semibold text-white">Live WebSocket Debugger</h3>
+            <h3 className="text-sm font-semibold text-white">Network & Event Logs</h3>
           </div>
           <button
             onClick={() => setShowLogs(!showLogs)}
-            className="text-xs text-indigo-400 hover:text-indigo-300 font-medium"
+            className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold"
           >
-            {showLogs ? 'Hide Console' : `Show Console (${logs.length})`}
+            {showLogs ? 'Hide Logs' : `Show (${logs.length})`}
           </button>
         </div>
 
         {showLogs && (
-          <div className="space-y-2">
-            <div className="h-44 overflow-y-auto bg-zinc-950 border border-zinc-800/90 rounded-xl p-2.5 font-mono text-[11px] space-y-1 select-text">
+          <div className="space-y-2 pt-2">
+            <div className="max-h-40 overflow-y-auto bg-zinc-950 p-3 rounded-xl border border-zinc-800 font-mono text-[10px] space-y-1">
               {logs.length === 0 ? (
-                <p className="text-zinc-600 italic">No packet activity recorded yet.</p>
+                <p className="text-zinc-600">No logs recorded yet.</p>
               ) : (
-                logs.slice(-30).map((log) => (
-                  <div key={log.id} className="flex gap-2 leading-tight">
-                    <span className="text-zinc-500 shrink-0">{log.time}</span>
-                    <span
-                      className={`shrink-0 font-bold ${
-                        log.type === 'tx'
-                          ? 'text-indigo-400'
-                          : log.type === 'rx'
-                          ? 'text-emerald-400'
-                          : log.type === 'err'
-                          ? 'text-rose-400'
-                          : 'text-zinc-400'
-                      }`}
-                    >
-                      [{log.type.toUpperCase()}]
-                    </span>
-                    <span className="text-zinc-300 break-all">{log.content}</span>
+                logs.map((log) => (
+                  <div key={log.id} className="text-zinc-400">
+                    <span className="text-zinc-600 mr-2">{log.time}</span>
+                    <span>{log.content}</span>
                   </div>
                 ))
               )}
             </div>
-
-            <div className="flex justify-end">
+            {logs.length > 0 && (
               <button
                 onClick={onClearLogs}
-                className="px-2.5 py-1 text-[11px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
+                className="text-xs text-zinc-400 hover:text-rose-400 flex items-center gap-1 transition-colors"
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="w-3.5 h-3.5" />
                 <span>Clear Logs</span>
               </button>
-            </div>
+            )}
           </div>
         )}
       </div>
@@ -352,20 +227,20 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </button>
       </div>
 
-      {/* Required PART 4: About Wireless Mouse Card */}
-      <div className="p-5 rounded-2xl bg-gradient-to-b from-zinc-900 to-zinc-950 border border-zinc-800/80 text-center space-y-2 shadow-lg">
-        <h2 className="text-base font-bold text-white tracking-wide">Wireless Mouse V1</h2>
+      {/* Product Information Card (Section 1: WEBMOUSE V2 / Universal Device Control) */}
+      <div className="p-6 rounded-2xl bg-zinc-900/60 border border-zinc-800 text-center space-y-2 shadow-lg">
+        <h2 className="text-base font-bold text-white tracking-tight">WebMouse V2</h2>
         <p className="text-xs font-semibold text-indigo-400">
-          Phone → Computer control over Wi-Fi
+          Universal Device Control
         </p>
-        <p className="text-[11px] text-zinc-400 max-w-xs mx-auto leading-relaxed pt-1">
-          Turns an Android or iPhone smartphone into a wireless trackpad, mouse, and keyboard for a Windows computer on your local network.
+        <p className="text-xs text-zinc-400 max-w-sm mx-auto leading-relaxed pt-1">
+          Universal device controller turning any smartphone or browser into a wireless trackpad, keyboard, media remote, screen projector, and AI voice controller.
         </p>
-        <div className="pt-2 flex justify-center gap-3 text-[10px] text-zinc-500">
-          <span>Version 1.0.0</span>
-          <span>•</span>
+        <div className="pt-2 flex justify-center gap-2.5 text-xs text-zinc-500">
+          <span>Version 2.0.0</span>
+          <span>·</span>
           <span>Zero External Hardware</span>
-          <span>•</span>
+          <span>·</span>
           <span>WebSocket Fast Lane</span>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { MousePointer, Sliders, Vibrate, VibrateOff, Settings, CircleDashed } from 'lucide-react';
+import { MousePointer, Sliders, ChevronUp, ChevronDown, CircleDashed } from 'lucide-react';
 import { AppSettings, OutgoingMessage } from '../types';
 import { triggerHaptic, playClickSound } from '../services/websocketService';
 
@@ -23,6 +23,7 @@ export const Touchpad: React.FC<TouchpadProps> = ({
   isConnected,
 }) => {
   const touchpadRef = useRef<HTMLDivElement>(null);
+  const scrollStripRef = useRef<HTMLDivElement>(null);
 
   // Gesture state
   const touchStartRef = useRef<{
@@ -42,7 +43,10 @@ export const Touchpad: React.FC<TouchpadProps> = ({
   const isMouseDownRef = useRef(false);
   const lastMousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Clean up timer on unmount
+  // Scroll strip tracking
+  const isScrollTouchingRef = useRef(false);
+  const lastScrollYRef = useRef(0);
+
   useEffect(() => {
     return () => {
       if (longPressTimerRef.current) {
@@ -55,7 +59,6 @@ export const Touchpad: React.FC<TouchpadProps> = ({
   const sendMovement = useCallback((rawDx: number, rawDy: number) => {
     let multiplier = settings.pointerSensitivity * settings.pointerSpeed;
     
-    // Apply smooth acceleration curve
     if (settings.pointerAcceleration) {
       const distance = Math.hypot(rawDx, rawDy);
       const accelFactor = Math.min(Math.max(distance / 5, 0.9), 2.2);
@@ -74,7 +77,14 @@ export const Touchpad: React.FC<TouchpadProps> = ({
     }
   }, [settings.pointerSensitivity, settings.pointerSpeed, settings.pointerAcceleration, onSendMessage]);
 
-  // Helper to safely convert React.TouchList to typed React.Touch array
+  const sendScroll = useCallback((amount: number) => {
+    const delta = settings.invertScroll ? -amount : amount;
+    onSendMessage({
+      type: 'mouse_scroll',
+      amount: delta,
+    });
+  }, [settings.invertScroll, onSendMessage]);
+
   const getTouchList = (touchList: React.TouchList): React.Touch[] => {
     const list: React.Touch[] = [];
     for (let i = 0; i < touchList.length; i++) {
@@ -84,9 +94,8 @@ export const Touchpad: React.FC<TouchpadProps> = ({
     return list;
   };
 
-  // Handle Touch Start
+  // Handle Touch Start on main trackpad
   const handleTouchStart = (e: React.TouchEvent) => {
-    // Prevent default browser gestures
     e.preventDefault();
 
     const touches = getTouchList(e.touches);
@@ -96,13 +105,11 @@ export const Touchpad: React.FC<TouchpadProps> = ({
     };
     movedDistanceRef.current = 0;
 
-    // Update active touches
     activeTouchesRef.current.clear();
     touches.forEach((t) => {
       activeTouchesRef.current.set(t.identifier, { x: t.clientX, y: t.clientY });
     });
 
-    // Ripple visual on first finger
     if (touches.length === 1 && touchpadRef.current) {
       const rect = touchpadRef.current.getBoundingClientRect();
       setVisualRipple({
@@ -111,7 +118,6 @@ export const Touchpad: React.FC<TouchpadProps> = ({
         active: true,
       });
 
-      // Long press = right click
       if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = setTimeout(() => {
         if (movedDistanceRef.current < 12) {
@@ -121,9 +127,6 @@ export const Touchpad: React.FC<TouchpadProps> = ({
           setVisualRipple(null);
         }
       }, 500);
-    } else {
-      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-      setVisualRipple(null);
     }
   };
 
@@ -132,38 +135,39 @@ export const Touchpad: React.FC<TouchpadProps> = ({
     e.preventDefault();
     const touches = getTouchList(e.touches);
 
-    // Cancel long press timer if moved
     if (touches.length === 1) {
-      const touch = touches[0];
-      const prev = activeTouchesRef.current.get(touch.identifier);
+      const t = touches[0];
+      const prev = activeTouchesRef.current.get(t.identifier);
 
       if (prev) {
-        const rawDx = touch.clientX - prev.x;
-        const rawDy = touch.clientY - prev.y;
-        movedDistanceRef.current += Math.hypot(rawDx, rawDy);
+        const rawDx = t.clientX - prev.x;
+        const rawDy = t.clientY - prev.y;
+        const dist = Math.hypot(rawDx, rawDy);
+        movedDistanceRef.current += dist;
 
-        if (movedDistanceRef.current > 12 && longPressTimerRef.current) {
+        if (movedDistanceRef.current > 10 && longPressTimerRef.current) {
           clearTimeout(longPressTimerRef.current);
           longPressTimerRef.current = null;
         }
 
         sendMovement(rawDx, rawDy);
 
-        // Update visual position
         if (touchpadRef.current) {
           const rect = touchpadRef.current.getBoundingClientRect();
           setVisualRipple({
-            x: touch.clientX - rect.left,
-            y: touch.clientY - rect.top,
+            x: t.clientX - rect.left,
+            y: t.clientY - rect.top,
             active: true,
           });
         }
       }
-
-      activeTouchesRef.current.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
+      activeTouchesRef.current.set(t.identifier, { x: t.clientX, y: t.clientY });
     } else if (touches.length === 2) {
-      // 2-finger swipe/drag: Scrolling (vertical or horizontal)
-      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      // 2 finger scroll
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
 
       const t1 = touches[0];
       const t2 = touches[1];
@@ -171,29 +175,14 @@ export const Touchpad: React.FC<TouchpadProps> = ({
       const prev2 = activeTouchesRef.current.get(t2.identifier);
 
       if (prev1 && prev2) {
-        const dy1 = t1.clientY - prev1.y;
-        const dy2 = t2.clientY - prev2.y;
-        const dx1 = t1.clientX - prev1.x;
-        const dx2 = t2.clientX - prev2.x;
+        const prevAvgY = (prev1.y + prev2.y) / 2;
+        const curAvgY = (t1.clientY + t2.clientY) / 2;
+        const deltaY = curAvgY - prevAvgY;
 
-        const avgDy = (dy1 + dy2) / 2;
-        const avgDx = (dx1 + dx2) / 2;
-
-        movedDistanceRef.current += Math.hypot(avgDx, avgDy);
-
-        // Vertical scroll dominant
-        if (Math.abs(avgDy) > Math.abs(avgDx) && Math.abs(avgDy) > 1.5) {
-          const direction = settings.invertScroll ? -1 : 1;
-          const scrollAmount = Math.round(-avgDy * settings.scrollSensitivity * 3.5 * direction);
-          if (scrollAmount !== 0) {
-            onSendMessage({ type: 'scroll', amount: scrollAmount });
-            triggerHaptic('light', settings.vibration);
-          }
-        } else if (Math.abs(avgDx) > 1.5) {
-          // Horizontal scroll
-          const hScrollAmount = Math.round(avgDx * settings.scrollSensitivity * 3.5);
-          if (hScrollAmount !== 0) {
-            onSendMessage({ type: 'hscroll', amount: hScrollAmount });
+        if (Math.abs(deltaY) > 1) {
+          const scrollUnits = Math.round(deltaY * settings.scrollSensitivity * 0.8);
+          if (scrollUnits !== 0) {
+            sendScroll(scrollUnits);
           }
         }
       }
@@ -215,33 +204,24 @@ export const Touchpad: React.FC<TouchpadProps> = ({
     const duration = Date.now() - touchStartRef.current.time;
     const totalDistance = movedDistanceRef.current;
 
-    // Tap detection
     if (duration < 280 && totalDistance < 10) {
       if (initialTouchCount === 1) {
         const now = Date.now();
         if (now - lastTapTimeRef.current < 300) {
-          // Double tap -> double click
           triggerHaptic('double', settings.vibration);
           playClickSound(settings.clickSound);
           onSendMessage({ type: 'double_click' });
-          lastTapTimeRef.current = 0; // Reset
+          lastTapTimeRef.current = 0;
         } else {
-          // Single tap -> Left click
           triggerHaptic('medium', settings.vibration);
           playClickSound(settings.clickSound);
           onSendMessage({ type: 'left_click' });
           lastTapTimeRef.current = now;
         }
       } else if (initialTouchCount === 2) {
-        // Two finger tap -> Right click
         triggerHaptic('double', settings.vibration);
         playClickSound(settings.clickSound);
         onSendMessage({ type: 'right_click' });
-      } else if (initialTouchCount === 3) {
-        // Three finger tap -> Middle click
-        triggerHaptic('heavy', settings.vibration);
-        playClickSound(settings.clickSound);
-        onSendMessage({ type: 'middle_click' });
       }
     }
 
@@ -251,7 +231,7 @@ export const Touchpad: React.FC<TouchpadProps> = ({
     }
   };
 
-  // Desktop Mouse Fallback Handling
+  // Desktop Mouse Fallback
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0) {
       isMouseDownRef.current = true;
@@ -289,7 +269,7 @@ export const Touchpad: React.FC<TouchpadProps> = ({
     }
   };
 
-  const handleMouseUp = (_e: React.MouseEvent) => {
+  const handleMouseUp = () => {
     if (isMouseDownRef.current) {
       isMouseDownRef.current = false;
       setVisualRipple(null);
@@ -301,7 +281,34 @@ export const Touchpad: React.FC<TouchpadProps> = ({
     }
   };
 
-  // Direct Button Handlers
+  // Dedicated Smooth Scroll Strip Handlers
+  const handleScrollTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    if (e.touches.length > 0) {
+      isScrollTouchingRef.current = true;
+      lastScrollYRef.current = e.touches[0].clientY;
+      triggerHaptic('light', settings.vibration);
+    }
+  };
+
+  const handleScrollTouchMove = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    if (isScrollTouchingRef.current && e.touches.length > 0) {
+      const currentY = e.touches[0].clientY;
+      const delta = (lastScrollYRef.current - currentY) * 1.5;
+      lastScrollYRef.current = currentY;
+
+      if (Math.abs(delta) > 1) {
+        sendScroll(Math.round(delta));
+      }
+    }
+  };
+
+  const handleScrollTouchEnd = () => {
+    isScrollTouchingRef.current = false;
+  };
+
+  // Button clicks
   const handleLeftClick = () => {
     triggerHaptic('medium', settings.vibration);
     playClickSound(settings.clickSound);
@@ -321,131 +328,130 @@ export const Touchpad: React.FC<TouchpadProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-zinc-950 select-none overflow-hidden relative">
-      {/* Top Touchpad Options Bar (Cursor Speed & Acceleration) */}
-      <div className="px-4 py-2 flex items-center justify-between bg-zinc-900/60 border-b border-zinc-800/80 shrink-0 gap-2 overflow-x-auto">
-        {/* Cursor Speed */}
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mr-1">Speed</span>
-          <div className="flex items-center gap-1 bg-zinc-950 p-0.5 rounded-xl border border-zinc-800">
-            <button
-              onClick={() => onUpdateSettings({ pointerSpeed: 0.8 })}
-              className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-colors ${
-                settings.pointerSpeed <= 0.8 ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              Low
-            </button>
-            <button
-              onClick={() => onUpdateSettings({ pointerSpeed: 1.0 })}
-              className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-colors ${
-                settings.pointerSpeed > 0.8 && settings.pointerSpeed < 1.3 ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              Med
-            </button>
-            <button
-              onClick={() => onUpdateSettings({ pointerSpeed: 1.5 })}
-              className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-colors ${
-                settings.pointerSpeed >= 1.3 ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              High
-            </button>
+    <div className="flex-1 flex flex-col h-full bg-zinc-950 select-none overflow-hidden relative max-w-4xl mx-auto w-full">
+      {/* Top Options: Quick Sensitivity & Acceleration */}
+      <div className="px-4 py-2 flex items-center justify-between bg-zinc-900/60 border-b border-zinc-800/80 shrink-0 gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-zinc-400">Sensitivity:</span>
+          <div className="flex items-center gap-1 bg-zinc-950 p-0.5 rounded-lg border border-zinc-800">
+            {[0.8, 1.2, 1.6].map((speed) => (
+              <button
+                key={speed}
+                onClick={() => onUpdateSettings({ pointerSpeed: speed })}
+                className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
+                  Math.abs(settings.pointerSpeed - speed) < 0.2
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                {speed === 0.8 ? 'Slow' : speed === 1.2 ? 'Normal' : 'Fast'}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Acceleration Toggle */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            onClick={() => onUpdateSettings({ pointerAcceleration: !settings.pointerAcceleration })}
-            className={`px-2.5 py-1 rounded-xl text-[10px] font-semibold transition-all border ${
-              settings.pointerAcceleration
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                : 'bg-zinc-800/80 text-zinc-400 border-zinc-700/60'
-            }`}
-          >
-            Accel: {settings.pointerAcceleration ? 'ON' : 'OFF'}
-          </button>
+        <button
+          onClick={() => onUpdateSettings({ pointerAcceleration: !settings.pointerAcceleration })}
+          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${
+            settings.pointerAcceleration
+              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+              : 'bg-zinc-800 text-zinc-400 border-zinc-700/60'
+          }`}
+        >
+          Accel {settings.pointerAcceleration ? 'ON' : 'OFF'}
+        </button>
+      </div>
+
+      {/* Main Trackpad Workspace (Touch Area + Smooth Scroll Area) */}
+      <div className="flex-1 flex p-3 gap-2 min-h-0">
+        {/* Main Touchpad Surface */}
+        <div
+          id="touchpad-surface"
+          ref={touchpadRef}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          className="flex-1 relative rounded-2xl border transition-colors cursor-crosshair overflow-hidden flex flex-col items-center justify-center bg-zinc-900/40 border-zinc-800 hover:border-zinc-700 shadow-inner"
+        >
+          <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px]" />
+
+          {/* Gesture hints (Section 9: compact) */}
+          <div className="pointer-events-none flex flex-col items-center text-center p-4 text-zinc-600">
+            <div className="p-3.5 rounded-2xl bg-zinc-800/40 text-zinc-500 mb-2">
+              <MousePointer className="w-8 h-8 opacity-70" />
+            </div>
+            <p className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
+              Trackpad
+            </p>
+            <p className="text-[11px] text-zinc-500/80 mt-1 max-w-[220px]">
+              Tap to click · 2-finger scroll · Long press for right click
+            </p>
+          </div>
+
+          {/* Visual Ripple Tracker */}
+          {visualRipple && visualRipple.active && (
+            <div
+              className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-75 flex items-center justify-center w-12 h-12 border-2 border-indigo-400/80 bg-indigo-500/20 shadow-lg shadow-indigo-500/30"
+              style={{
+                left: `${visualRipple.x}px`,
+                top: `${visualRipple.y}px`,
+              }}
+            >
+              <div className="w-2.5 h-2.5 rounded-full bg-indigo-300" />
+            </div>
+          )}
+        </div>
+
+        {/* Smooth Scroll Strip Area (Section 9) */}
+        <div
+          ref={scrollStripRef}
+          onTouchStart={handleScrollTouchStart}
+          onTouchMove={handleScrollTouchMove}
+          onTouchEnd={handleScrollTouchEnd}
+          className="w-12 bg-zinc-900/60 border border-zinc-800 rounded-2xl flex flex-col items-center justify-between py-3 cursor-ns-resize hover:bg-zinc-850 transition-colors select-none shrink-0"
+          title="Drag up or down to scroll"
+        >
+          <ChevronUp className="w-4 h-4 text-zinc-500" />
+          <div className="flex flex-col items-center gap-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
+            <div className="w-1.5 h-8 rounded-full bg-indigo-500/40" />
+            <div className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
+          </div>
+          <ChevronDown className="w-4 h-4 text-zinc-500" />
         </div>
       </div>
 
-      {/* Main Touchpad Area */}
-      <div
-        id="touchpad-surface"
-        ref={touchpadRef}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        className="touchpad-area flex-1 relative mx-4 mb-4 rounded-[2rem] border transition-colors cursor-crosshair overflow-hidden flex flex-col items-center justify-center bg-gradient-to-b from-zinc-900/90 via-zinc-900/60 to-zinc-950 border-zinc-800 shadow-inner"
-      >
-        {/* Subtle grid pattern background for tactile aesthetic */}
-        <div className="absolute inset-0 opacity-[0.04] pointer-events-none bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px]" />
-
-        {/* Center watermark & gesture hint */}
-        <div className="pointer-events-none flex flex-col items-center justify-center text-center p-4 text-zinc-600">
-          <div className="p-4 rounded-3xl bg-zinc-800/30 text-zinc-500 shadow-inner">
-            <MousePointer className="w-10 h-10 opacity-70" />
-          </div>
-          <p className="text-xs font-semibold tracking-widest mt-4 text-zinc-500 uppercase">
-            Touchpad
-          </p>
-          <div className="mt-3 text-[10px] text-zinc-500/80 flex flex-wrap justify-center gap-x-4 gap-y-1.5 max-w-[200px] leading-relaxed">
-            <span>Tap: Click</span>
-            <span>2-Tap: Double</span>
-            <span>2-Fingers: Scroll / Right Click</span>
-            <span>Hold: Right Click</span>
-          </div>
-        </div>
-
-        {/* Visual Ripple Tracker */}
-        {visualRipple && visualRipple.active && (
-          <div
-            className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-75 flex items-center justify-center w-12 h-12 border-2 border-indigo-400/80 bg-indigo-500/20 shadow-lg shadow-indigo-500/30"
-            style={{
-              left: `${visualRipple.x}px`,
-              top: `${visualRipple.y}px`,
-            }}
-          >
-            <div className="w-2.5 h-2.5 rounded-full bg-indigo-300" />
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Physical Buttons Bar */}
-      <div className="p-4 pt-0 bg-zinc-950 shrink-0">
-        <div className="flex gap-3 h-16">
-          {/* Left Click (Large Primary) */}
+      {/* Bottom Physical Click Areas (Section 9: Clearly defined left/right click areas) */}
+      <div className="p-3 pt-0 bg-zinc-950 shrink-0">
+        <div className="flex gap-2.5 h-14">
           <button
             id="btn-physical-left-click"
             type="button"
             onClick={handleLeftClick}
-            className="flex-1 rounded-2xl bg-gradient-to-b from-zinc-800 to-zinc-900 active:from-zinc-900 active:to-zinc-950 border-t border-zinc-700/80 border-b-2 border-b-black text-zinc-200 font-semibold text-sm active:translate-y-0.5 active:shadow-inner transition-all flex flex-col items-center justify-center shadow-lg select-none"
+            className="flex-1 rounded-xl bg-zinc-850 hover:bg-zinc-800 active:bg-zinc-900 border border-zinc-700/80 text-zinc-200 font-semibold text-xs active:translate-y-0.5 transition-all flex items-center justify-center shadow-md select-none"
           >
             <span>Left Click</span>
           </button>
 
-          {/* Middle Click */}
           <button
             id="btn-physical-middle-click"
             type="button"
             onClick={handleMiddleClick}
-            className="w-16 rounded-2xl bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 border-t border-zinc-800/80 border-b-2 border-b-black text-zinc-400 active:translate-y-0.5 transition-all flex flex-col items-center justify-center shadow-md select-none"
+            className="w-14 rounded-xl bg-zinc-900 hover:bg-zinc-800 active:bg-zinc-950 border border-zinc-800 text-zinc-400 active:translate-y-0.5 transition-all flex items-center justify-center shadow-sm select-none"
             title="Middle Click"
           >
-            <CircleDashed className="w-5 h-5" />
+            <CircleDashed className="w-4 h-4" />
           </button>
 
-          {/* Right Click */}
           <button
             id="btn-physical-right-click"
             type="button"
             onClick={handleRightClick}
-            className="flex-1 rounded-2xl bg-gradient-to-b from-zinc-800 to-zinc-900 active:from-zinc-900 active:to-zinc-950 border-t border-zinc-700/80 border-b-2 border-b-black text-zinc-200 font-semibold text-sm active:translate-y-0.5 active:shadow-inner transition-all flex flex-col items-center justify-center shadow-lg select-none"
+            className="flex-1 rounded-xl bg-zinc-850 hover:bg-zinc-800 active:bg-zinc-900 border border-zinc-700/80 text-zinc-200 font-semibold text-xs active:translate-y-0.5 transition-all flex items-center justify-center shadow-md select-none"
           >
             <span>Right Click</span>
           </button>

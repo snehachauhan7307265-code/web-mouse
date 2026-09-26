@@ -782,9 +782,9 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   <span className="text-emerald-400 font-semibold">color 0A</span>
                 </div>
                 <div className="p-3 text-[#00ff66] space-y-1 select-text leading-tight overflow-x-auto">
-                  <p className="opacity-70">&gt; WebMouse V1 — Windows Helper Server [PORT 8765]</p>
+                  <p className="opacity-70">&gt; WebMouse V2 — Windows Helper Server [PORT 8765]</p>
                   <p>==============================================================</p>
-                  <p className="font-bold">          WEBMOUSE V1 — WINDOWS HELPER (CMD)</p>
+                  <p className="font-bold">          WEBMOUSE V2 — WINDOWS HELPER (CMD)</p>
                   <p>==============================================================</p>
                   <p>  [STATUS]           RUNNING (DO NOT CLOSE THIS WINDOW)</p>
                   <p>  [LAPTOP WI-FI IP]  192.168.1.15</p>

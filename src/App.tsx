@@ -19,9 +19,11 @@ import {
   Tv,
   Cast,
   Bot,
-  Mic
+  Mic,
+  MoreHorizontal
 } from 'lucide-react';
 import { Header } from './components/Header';
+import { MoreMenuModal } from './components/MoreMenuModal';
 import { HomeTab } from './components/HomeTab';
 import { Touchpad } from './components/Touchpad';
 import { KeyboardTab } from './components/KeyboardTab';
@@ -179,6 +181,7 @@ export default function App() {
   const [connectionModalView, setConnectionModalView] = useState<'normal' | 'scanner' | 'qr_host' | 'manual_pin' | 'download_helper'>('normal');
   const [isHelperGuideOpen, setIsHelperGuideOpen] = useState(false);
   const [isProfilesModalOpen, setIsProfilesModalOpen] = useState(false);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
   // Screenshot modal & data
   const [isScreenshotModalOpen, setIsScreenshotModalOpen] = useState(false);
