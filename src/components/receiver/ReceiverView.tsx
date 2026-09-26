@@ -76,6 +76,25 @@ export const ReceiverView: React.FC<ReceiverViewProps> = ({
   // Preview file modal
   const [previewFile, setPreviewFile] = useState<ReceivedFile | null>(null);
 
+  // Screen Projector & WebRTC Streaming State
+  const [projectorSession, setProjectorSession] = useState<{
+    sessionId: string;
+    sourceDevice: string;
+    quality?: string;
+    fps?: number;
+    isStreaming: boolean;
+    isPaused: boolean;
+    resolution: string;
+    fpsVal: number;
+    latency: number;
+  } | null>(null);
+
+  const [aspectMode, setAspectMode] = useState<'fit' | 'original'>('fit');
+  const receiverPcRef = useRef<RTCPeerConnection | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+  const receiverStatsTimerRef = useRef<any>(null);
+
   // Subscribe to receiverService events
   useEffect(() => {
     const unsubStatus = receiverService.addEventListener('statusChange', (newStatus, ctrl) => {
@@ -144,6 +163,141 @@ export const ReceiverView: React.FC<ReceiverViewProps> = ({
       showHudNotification(`🔗 Received Quick Share from ${item.senderName}`);
     });
 
+    const unsubProjStart = receiverService.addEventListener('projectorStart', (data) => {
+      setProjectorSession({
+        sessionId: data.sessionId,
+        sourceDevice: data.sourceDevice,
+        quality: data.quality,
+        fps: data.fps,
+        isStreaming: false,
+        isPaused: false,
+        resolution: 'Negotiating WebRTC...',
+        fpsVal: data.fps || 30,
+        latency: 0,
+      });
+      setActiveScreen('projector');
+      showHudNotification(`📡 Screen Projection Starting from ${data.sourceDevice}`);
+    });
+
+    const unsubOffer = receiverService.addEventListener('webrtcOffer', async (data) => {
+      try {
+        if (receiverPcRef.current) {
+          receiverPcRef.current.close();
+        }
+
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+          ],
+        });
+        receiverPcRef.current = pc;
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            receiverService.sendWebRTCIceCandidate(data.sessionId, event.candidate.toJSON(), data.fromDevice);
+          }
+        };
+
+        pc.ontrack = (event) => {
+          const stream = event.streams[0] || new MediaStream([event.track]);
+          remoteStreamRef.current = stream;
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = stream;
+            remoteVideoRef.current.play().catch(() => {});
+          }
+          setProjectorSession((prev) => prev ? { ...prev, isStreaming: true } : null);
+        };
+
+        await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        if (answer.sdp) {
+          receiverService.sendWebRTCAnswer(data.sessionId, answer.sdp, data.fromDevice);
+        }
+
+        // Start stats telemetry
+        if (receiverStatsTimerRef.current) clearInterval(receiverStatsTimerRef.current);
+        receiverStatsTimerRef.current = setInterval(async () => {
+          if (!receiverPcRef.current || receiverPcRef.current.connectionState !== 'connected') return;
+          try {
+            const report = await receiverPcRef.current.getStats();
+            let latency = 0;
+            let width = 0;
+            let height = 0;
+            let fps = 0;
+            report.forEach((stat) => {
+              if (stat.type === 'candidate-pair' && stat.state === 'succeeded' && stat.currentRoundTripTime !== undefined) {
+                latency = Math.round(stat.currentRoundTripTime * 1000);
+              }
+              if (stat.type === 'inbound-rtp' && stat.kind === 'video') {
+                if (stat.framesPerSecond) fps = stat.framesPerSecond;
+                if (stat.frameWidth) width = stat.frameWidth;
+                if (stat.frameHeight) height = stat.frameHeight;
+              }
+              if (stat.type === 'track' && stat.kind === 'video') {
+                if (stat.frameWidth) width = stat.frameWidth;
+                if (stat.frameHeight) height = stat.frameHeight;
+              }
+            });
+
+            setProjectorSession((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                latency: latency || prev.latency,
+                resolution: width && height ? `${width} × ${height}` : prev.resolution,
+                fpsVal: fps || prev.fpsVal,
+              };
+            });
+          } catch (e) {}
+        }, 1500);
+
+      } catch (e: any) {
+        console.error('[ReceiverView] WebRTC Offer error:', e);
+        showHudNotification(`WebRTC Offer error: ${e.message}`);
+      }
+    });
+
+    const unsubIce = receiverService.addEventListener('webrtcIceCandidate', async (data) => {
+      if (receiverPcRef.current && data.candidate) {
+        try {
+          await receiverPcRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } catch (e) {}
+      }
+    });
+
+    const unsubProjStop = receiverService.addEventListener('projectorStop', () => {
+      if (receiverPcRef.current) {
+        receiverPcRef.current.close();
+        receiverPcRef.current = null;
+      }
+      if (receiverStatsTimerRef.current) {
+        clearInterval(receiverStatsTimerRef.current);
+        receiverStatsTimerRef.current = null;
+      }
+      if (remoteStreamRef.current) {
+        remoteStreamRef.current.getTracks().forEach((t) => t.stop());
+        remoteStreamRef.current = null;
+      }
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = null;
+      }
+      setProjectorSession(null);
+      showHudNotification('Screen projection ended');
+    });
+
+    const unsubProjPause = receiverService.addEventListener('projectorPause', () => {
+      setProjectorSession((prev) => prev ? { ...prev, isPaused: true } : null);
+      showHudNotification('Stream Paused by Controller');
+    });
+
+    const unsubProjResume = receiverService.addEventListener('projectorResume', () => {
+      setProjectorSession((prev) => prev ? { ...prev, isPaused: false } : null);
+      showHudNotification('Stream Resumed');
+    });
+
     return () => {
       unsubStatus();
       unsubNav();
@@ -154,6 +308,17 @@ export const ReceiverView: React.FC<ReceiverViewProps> = ({
       unsubPres();
       unsubFile();
       unsubShare();
+      unsubProjStart();
+      unsubOffer();
+      unsubIce();
+      unsubProjStop();
+      unsubProjPause();
+      unsubProjResume();
+      if (receiverStatsTimerRef.current) clearInterval(receiverStatsTimerRef.current);
+      if (receiverPcRef.current) {
+        receiverPcRef.current.close();
+        receiverPcRef.current = null;
+      }
     };
   }, [focusedIndex]);
 
@@ -753,27 +918,145 @@ export const ReceiverView: React.FC<ReceiverViewProps> = ({
               </div>
             )}
 
-            {/* Screen 6: Screen Projector / Mirroring Foundation */}
+            {/* Screen 6: Screen Projector / WebRTC Live Mirroring */}
             {activeScreen === 'projector' && (
-              <div className="flex-1 flex flex-col items-center justify-center max-w-4xl mx-auto w-full text-center space-y-4 p-8 bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl">
-                <div className="p-4 bg-rose-500/20 text-rose-400 rounded-3xl">
-                  <Cast className="w-16 h-16 animate-pulse" />
-                </div>
-                <h3 className="text-2xl font-bold text-white">Screen Projector Receiver Surface</h3>
-                <p className="text-sm text-zinc-400 max-w-md">
-                  WebRTC P2P signaling is configured. Controller can cast presentation slides, photos, and browser screen to this receiver.
-                </p>
-                <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 text-xs font-mono text-zinc-400 space-y-1 text-left w-full max-w-md">
-                  <div>Protocol: WebRTC DataChannel + RTCPeerConnection</div>
-                  <div>Receiver Capability: screen_receiver (Active)</div>
-                  <div>Signaling State: Ready for SDP Offer / Answer</div>
-                </div>
-                <button
-                  onClick={() => setActiveScreen('home')}
-                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-xs font-semibold"
-                >
-                  Return to Home
-                </button>
+              <div className="flex-1 flex flex-col w-full h-full relative bg-black rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl select-none">
+                {projectorSession?.isStreaming || remoteStreamRef.current ? (
+                  <div className="flex-1 w-full h-full relative flex items-center justify-center bg-black">
+                    {/* Floating Stream Bar HUD */}
+                    <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between p-3 rounded-2xl bg-zinc-950/85 backdrop-blur-md border border-zinc-800/80 text-white shadow-2xl">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400">
+                          <Cast className="w-5 h-5 animate-pulse" />
+                        </div>
+                        <div className="text-left">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-white">Receiving Screen</span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                              Live Stream
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-400 font-mono">
+                            Source: <strong className="text-white">{projectorSession?.sourceDevice || 'My Phone'}</strong> • {projectorSession?.resolution || '1920 × 1080'} • {projectorSession?.fpsVal || 30} FPS • {projectorSession?.latency ? `${projectorSession.latency} ms` : '< 10 ms'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {/* Aspect Ratio Toggle */}
+                        <button
+                          onClick={() => setAspectMode(aspectMode === 'fit' ? 'original' : 'fit')}
+                          className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 transition-colors flex items-center gap-1.5"
+                          title="Toggle aspect ratio scaling"
+                        >
+                          <Sliders className="w-3.5 h-3.5" />
+                          <span>{aspectMode === 'fit' ? 'Fit to Screen' : 'Original Ratio'}</span>
+                        </button>
+
+                        {/* Fullscreen Toggle */}
+                        <button
+                          onClick={toggleFullscreen}
+                          className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+                          title="Fullscreen toggle"
+                        >
+                          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                        </button>
+
+                        {/* Stop Receiving Button */}
+                        <button
+                          onClick={() => {
+                            if (projectorSession?.sessionId) {
+                              receiverService.sendProjectorStop(projectorSession.sessionId, 'Receiver stopped stream');
+                            }
+                            if (receiverPcRef.current) {
+                              receiverPcRef.current.close();
+                              receiverPcRef.current = null;
+                            }
+                            if (remoteStreamRef.current) {
+                              remoteStreamRef.current.getTracks().forEach((t) => t.stop());
+                              remoteStreamRef.current = null;
+                            }
+                            if (remoteVideoRef.current) {
+                              remoteVideoRef.current.srcObject = null;
+                            }
+                            setProjectorSession(null);
+                            setActiveScreen('home');
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-md"
+                        >
+                          <X className="w-4 h-4" />
+                          <span>Stop</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Remote Screen Video View */}
+                    <video
+                      ref={remoteVideoRef}
+                      autoPlay
+                      playsInline
+                      className={`w-full h-full max-w-full max-h-full ${
+                        aspectMode === 'fit' ? 'object-contain' : 'object-cover'
+                      }`}
+                    />
+
+                    {/* Paused Overlay */}
+                    {projectorSession?.isPaused && (
+                      <div className="absolute inset-0 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center space-y-2 z-20">
+                        <Pause className="w-12 h-12 text-amber-400 animate-pulse" />
+                        <h4 className="text-lg font-bold text-white">Projection Paused</h4>
+                        <p className="text-xs text-zinc-400">Stream paused by controller device</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center max-w-xl mx-auto w-full text-center space-y-5 p-8">
+                    <div className="p-5 bg-indigo-500/20 text-indigo-400 rounded-3xl border border-indigo-500/30 shadow-inner">
+                      <Cast className="w-16 h-16 animate-pulse" />
+                    </div>
+                    <div>
+                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold mb-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                        <span>Ready to Receive</span>
+                      </div>
+                      <h3 className="text-2xl font-bold text-white">WebMouse Screen Projector Receiver</h3>
+                      <p className="text-sm text-zinc-400 mt-1">
+                        Device: <strong className="text-white">{config.name}</strong> ({config.type === 'smart_board' ? 'Smart Board' : 'Android TV'})
+                      </p>
+                    </div>
+
+                    <div className="p-4 bg-zinc-900/90 rounded-2xl border border-zinc-800 text-xs text-zinc-400 space-y-2 text-left w-full shadow-lg">
+                      <div className="flex items-center gap-2 text-white font-semibold">
+                        <Wifi className="w-4 h-4 text-indigo-400" />
+                        <span>Waiting for projection stream...</span>
+                      </div>
+                      <p className="text-zinc-400 leading-relaxed">
+                        To project your screen: open WebMouse on your phone or PC, select <strong>[Project My Screen]</strong>, choose <strong>{config.name}</strong>, and approve screen capture.
+                      </p>
+                      <div className="pt-2 border-t border-zinc-800 text-[11px] font-mono text-zinc-500 flex justify-between">
+                        <span>Signaling: WebSocket / Peer</span>
+                        <span>Protocol: WebRTC P2P</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setActiveScreen('home')}
+                        className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-xs font-semibold transition-colors"
+                      >
+                        Return to Home
+                      </button>
+                      {onLaunchControllerForTesting && (
+                        <button
+                          onClick={onLaunchControllerForTesting}
+                          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/30 transition-all"
+                        >
+                          🧪 Launch Controller (Test Mode)
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

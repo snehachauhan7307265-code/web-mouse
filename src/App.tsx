@@ -16,7 +16,10 @@ import {
   Scan,
   Command,
   LayoutDashboard,
-  Tv
+  Tv,
+  Cast,
+  Bot,
+  Mic
 } from 'lucide-react';
 import { Header } from './components/Header';
 import { HomeTab } from './components/HomeTab';
@@ -26,6 +29,8 @@ import { ShareTab } from './components/ShareTab';
 import { MediaTab } from './components/MediaTab';
 import { CustomControlsTab } from './components/CustomControlsTab';
 import { SettingsTab } from './components/SettingsTab';
+import { ProjectorPanel } from './components/projector/ProjectorPanel';
+import { AIControlPanel } from './features/ai/AIControlPanel';
 import { ConnectionModal } from './components/ConnectionModal';
 import { WindowsHelperModal } from './components/WindowsHelperModal';
 import { ScreenshotModal } from './components/ScreenshotModal';
@@ -139,8 +144,8 @@ export default function App() {
     }
   });
 
-  // Tab navigation: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'custom' | 'settings' | 'tv_remote'
-  const [activeTab, setActiveTab] = useState<'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'custom' | 'settings' | 'tv_remote'>('home');
+  // Tab navigation: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'custom' | 'settings' | 'tv_remote' | 'projector' | 'ai'
+  const [activeTab, setActiveTab] = useState<'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'custom' | 'settings' | 'tv_remote' | 'projector' | 'ai'>('home');
 
   // Universal Devices & Profiles (V2 Architecture)
   const [devices, setDevices] = useState<Device[]>(() => deviceManager.getDevices());
@@ -578,6 +583,24 @@ export default function App() {
     showToast(`Connecting to ${profile.name}...`);
   };
 
+  const handleSelectDevice = (dev: Device) => {
+    setActiveProfileId(dev.id);
+    deviceManager.setActiveDevice(dev.id);
+    setActiveDevice(dev);
+    const newConfig: ConnectionConfig = {
+      host: dev.host,
+      port: dev.port || 8765,
+      code: dev.pairingCode || '',
+      token: dev.token,
+      lastComputerName: dev.name,
+      autoReconnect: true,
+    };
+    updateConfig(newConfig);
+    wsClientRef.current?.updateConfig(newConfig, settings.deviceName);
+    wsClientRef.current?.connect(false);
+    showToast(`Switched to ${dev.name}`);
+  };
+
   const handleRenameProfile = (id: string, newName: string) => {
     deviceManager.updateDevice(id, { name: newName });
     const updated = renameComputerProfile(id, newName);
@@ -597,7 +620,7 @@ export default function App() {
     showToast('Device removed');
   };
 
-  const handleTabChange = (tab: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'custom' | 'settings' | 'tv_remote') => {
+  const handleTabChange = (tab: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'custom' | 'settings' | 'tv_remote' | 'projector' | 'ai') => {
     triggerHaptic('light', settings.vibration);
     setActiveTab(tab);
   };
@@ -794,6 +817,42 @@ export default function App() {
               onOpenHelperGuide={() => setIsHelperGuideOpen(true)}
             />
           )}
+
+          {activeTab === 'projector' && (
+            <ProjectorPanel
+              devices={devices}
+              activeDevice={activeDevice}
+              onSendMessage={handleSendMessage}
+              lastIncomingMessage={lastIncomingMessage}
+              vibrationEnabled={settings.vibration}
+            />
+          )}
+
+          {activeTab === 'ai' && (
+            <AIControlPanel
+              devices={devices}
+              activeDevice={activeDevice}
+              onSendMessage={handleSendMessage}
+              onSelectDevice={(dev) => handleSelectDevice(dev)}
+              onStartProjection={async () => {
+                setActiveTab('projector');
+                return true;
+              }}
+              onStopProjection={() => {
+                handleSendMessage({ type: 'projector_stop', sessionId: '' });
+              }}
+              onPauseProjection={() => {
+                handleSendMessage({ type: 'projector_pause', sessionId: '' });
+              }}
+              onResumeProjection={() => {
+                handleSendMessage({ type: 'projector_resume', sessionId: '' });
+              }}
+              onOpenShareModal={() => {
+                setActiveTab('share');
+              }}
+              vibrationEnabled={settings.vibration}
+            />
+          )}
         </main>
 
         {/* Incoming File Requests Overlay */}
@@ -917,6 +976,36 @@ export default function App() {
               <FolderUp className="w-4 h-4" />
             </div>
             <span className="text-[9px] mt-0.5 tracking-tight">Share</span>
+          </button>
+
+          <button
+            id="tab-btn-projector"
+            onClick={() => handleTabChange('projector')}
+            className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
+              activeTab === 'projector' ? 'text-indigo-400 font-semibold' : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <div className={`p-1.5 rounded-xl transition-all ${
+              activeTab === 'projector' ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30' : ''
+            }`}>
+              <Cast className="w-4 h-4" />
+            </div>
+            <span className="text-[9px] mt-0.5 tracking-tight">Project</span>
+          </button>
+
+          <button
+            id="tab-btn-ai"
+            onClick={() => handleTabChange('ai')}
+            className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${
+              activeTab === 'ai' ? 'text-rose-400 font-semibold' : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <div className={`p-1.5 rounded-xl transition-all ${
+              activeTab === 'ai' ? 'bg-rose-500/20 text-rose-400 ring-1 ring-rose-500/30' : ''
+            }`}>
+              <Mic className="w-4 h-4" />
+            </div>
+            <span className="text-[9px] mt-0.5 tracking-tight font-bold">Voice/AI</span>
           </button>
 
           <button

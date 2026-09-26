@@ -201,7 +201,8 @@ export type OutgoingMessage =
   | { type: 'projector_start'; sessionId: string; sourceDevice: string; targetDevice: string; quality?: string; fps?: number }
   | { type: 'projector_stop'; sessionId: string; reason?: string }
   | { type: 'projector_pause'; sessionId: string }
-  | { type: 'projector_resume'; sessionId: string };
+  | { type: 'projector_resume'; sessionId: string }
+  | { type: 'open_app'; app: string };
 
 export type IncomingMessage =
   | { type: 'server_info'; ip: string; port: number; version: number }

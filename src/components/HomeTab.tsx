@@ -25,7 +25,10 @@ import {
   Wifi, 
   Sparkles, 
   SlidersHorizontal,
-  Plus
+  Plus,
+  Cast,
+  Bot,
+  Mic
 } from 'lucide-react';
 import { ConnectionStatus, ConnectedDeviceInfo, LogEntry, ComputerProfile, QuickActionId, Device, DeviceType, DeviceCapability } from '../types';
 import { getLatencyQuality, getDeviceTypeLabel, getDeviceTypeColor } from '../utils/profiles';
@@ -41,7 +44,7 @@ interface HomeTabProps {
   devices?: Device[];
   activeProfileId?: string;
   activeDevice?: Device | null;
-  onNavigate: (tab: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'custom' | 'settings' | 'tv_remote') => void;
+  onNavigate: (tab: 'home' | 'mouse' | 'keyboard' | 'share' | 'media' | 'custom' | 'settings' | 'tv_remote' | 'projector' | 'ai') => void;
   onClearLogs: () => void;
   onReconnect: () => void;
   onDisconnect: () => void;
@@ -389,6 +392,58 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             </span>
           </button>
         )}
+
+        {/* Primary Screen Projector Launcher */}
+        <button 
+          id="btn-launch-screen-projector"
+          onClick={() => onNavigate('projector')}
+          className="w-full relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900/40 via-purple-900/20 to-zinc-900 border border-indigo-500/30 p-4 flex items-center justify-between group transition-all active:scale-[0.98] shadow-lg"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 bg-indigo-500/20 text-indigo-400 rounded-2xl group-hover:scale-105 transition-transform shadow-lg shadow-indigo-500/20">
+              <Cast className="w-6 h-6 animate-pulse" />
+            </div>
+            <div className="text-left">
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-sm font-bold text-white">Project My Screen</h3>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
+                  WebRTC P2P
+                </span>
+              </div>
+              <p className="text-xs text-zinc-400 mt-0.5">Stream display to Laptop, TV or Smart Board</p>
+            </div>
+          </div>
+          <span className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-md flex items-center gap-1">
+            <Cast className="w-3.5 h-3.5" />
+            Project
+          </span>
+        </button>
+
+        {/* Primary Voice & AI Control Engine Launcher */}
+        <button 
+          id="btn-launch-ai-control"
+          onClick={() => onNavigate('ai')}
+          className="w-full relative overflow-hidden rounded-3xl bg-gradient-to-br from-purple-950/40 via-rose-950/20 to-zinc-900 border border-rose-500/30 p-4 flex items-center justify-between group transition-all active:scale-[0.98] shadow-lg"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 bg-gradient-to-tr from-rose-500/20 to-purple-500/20 text-rose-400 rounded-2xl group-hover:scale-105 transition-transform shadow-lg shadow-rose-500/20">
+              <Mic className="w-6 h-6 text-rose-400 animate-pulse" />
+            </div>
+            <div className="text-left">
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-sm font-bold text-white">Voice & AI Control</h3>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-semibold border border-rose-500/30">
+                  Speech & Intent
+                </span>
+              </div>
+              <p className="text-xs text-zinc-400 mt-0.5">Speak in Hindi or English to control PC, TV & Smart Board</p>
+            </div>
+          </div>
+          <span className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white text-xs font-bold shadow-md flex items-center gap-1.5">
+            <Mic className="w-3.5 h-3.5" />
+            Voice
+          </span>
+        </button>
 
         {/* 6 Grid Remote Tools with capability-aware badges */}
         <div className="grid grid-cols-2 gap-2.5">

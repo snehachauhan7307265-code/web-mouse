@@ -1766,6 +1766,33 @@ class WebMouseServer:
                         print(f"OPENING LINK: {url}")
                         webbrowser.open(url)
 
+                # 18b. Allowlisted Application Launch (Phase 3 AI Control)
+                elif msg_type == "open_app":
+                    app_name = str(data.get("app", "")).lower().strip()
+                    allowed_apps = {
+                        "chrome": "https://www.google.com",
+                        "edge": "microsoft-edge:",
+                        "notepad": "notepad.exe",
+                        "calc": "calc.exe",
+                        "calculator": "calc.exe",
+                        "explorer": "explorer.exe",
+                        "taskmgr": "taskmgr.exe",
+                        "youtube": "https://www.youtube.com"
+                    }
+                    if app_name in allowed_apps:
+                        target = allowed_apps[app_name]
+                        print(f"AI SAFE APP LAUNCH: {app_name} -> {target}")
+                        if target.startswith("http") or target.startswith("microsoft-edge:"):
+                            webbrowser.open(target)
+                        else:
+                            try:
+                                import subprocess
+                                subprocess.Popen([target])
+                            except Exception as e:
+                                print(f"Error launching {target}: {e}")
+                    else:
+                        print(f"[SECURITY] Rejected unallowlisted app launch: {app_name}")
+
                 # 19. Text Sharing (Copy to PC Clipboard)
                 elif msg_type == "share_text":
                     text = str(data.get("text", ""))
