@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, AlertCircle, RefreshCw, Upload, Terminal, SwitchCamera, ExternalLink } from 'lucide-react';
+import { X, Camera, AlertCircle, RefreshCw, Upload, Terminal, SwitchCamera, ExternalLink, CheckCircle2, Zap, ArrowRight } from 'lucide-react';
 
 interface QRScannerProps {
   onScan: (data: any) => void;
@@ -15,6 +15,8 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
   const [currentCameraIndex, setCurrentCameraIndex] = useState(0);
   const [isScanningFile, setIsScanningFile] = useState(false);
   const [isInIframe, setIsInIframe] = useState(false);
+  const [scannedResult, setScannedResult] = useState<any | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isStoppingRef = useRef(false);
@@ -129,9 +131,33 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
     onClose();
   };
 
+  // Countdown effect to automatically trigger connection
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown > 0) {
+      const timer = setTimeout(() => {
+        setCountdown((prev) => (prev !== null ? prev - 1 : null));
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (countdown === 0 && scannedResult) {
+      safelyStopScanner().finally(() => {
+        onScan(scannedResult);
+      });
+    }
+  }, [countdown, scannedResult, onScan]);
+
+  const handleImmediateConnect = () => {
+    if (!scannedResult) return;
+    setCountdown(0);
+    safelyStopScanner().finally(() => {
+      onScan(scannedResult);
+    });
+  };
+
   // Process decoded QR text
   const processDecodedText = useCallback(
     (decodedText: string) => {
+      if (scannedResult) return; // Prevent double decoding
       try {
         let pairData: any = null;
         const trimmed = (decodedText || '').trim();
@@ -211,14 +237,10 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
         }
 
         const hostLower = String(pairData.host).toLowerCase().trim();
-        if (
-          hostLower === 'localhost' ||
-          hostLower === '127.0.0.1' ||
-          hostLower.startsWith('127.') ||
-          hostLower.includes('.run.app') ||
-          hostLower.includes('.vercel.app')
-        ) {
-          setError('QR कोड में लोकलहोस्ट (localhost) है। कृपया PC का Wi-Fi IP (उदा: 192.168.x.x) वाला QR कोड स्कैन करें।');
+        const isClientLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+        if (!isClientLocal && (hostLower.includes('.run.app') || hostLower.includes('.vercel.app'))) {
+          setError('QR कोड में क्लाउड एड्रेस मिला। कृपया PC स्क्रीन पर दिखा Wi-Fi IP वाला QR कोड स्कैन करें।');
           return;
         }
 
@@ -231,14 +253,17 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
           }
         }
 
-        safelyStopScanner().finally(() => {
-          onScan(pairData);
-        });
+        // Start countdown timer feedback as requested by user
+        setScannedResult(pairData);
+        setCountdown(3);
+        try {
+          if (navigator.vibrate) navigator.vibrate([40, 50, 40]);
+        } catch {}
       } catch {
         setError('QR कोड प्रोसेस करने में त्रुटि हुई।');
       }
     },
-    [onScan]
+    [scannedResult]
   );
 
   // Start Camera with resilient fallbacks
@@ -432,6 +457,47 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
             id="qr-reader"
             className="w-full h-full min-h-[260px] overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 flex items-center justify-center relative"
           />
+
+          {/* Connecting Countdown Overlay requested by user */}
+          {scannedResult && countdown !== null && (
+            <div className="absolute inset-0 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-30 animate-in fade-in duration-200">
+              <div className="w-14 h-14 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center text-emerald-400 mb-3 shadow-lg shadow-emerald-500/30">
+                <CheckCircle2 className="w-8 h-8 animate-pulse" />
+              </div>
+
+              <h3 className="text-base font-bold text-white mb-1">
+                QR Code Scanned!
+              </h3>
+              <p className="text-xs text-zinc-400 mb-4">
+                Laptop se connect kiya ja raha hai...
+              </p>
+
+              {/* Countdown Number */}
+              <div className="relative flex items-center justify-center w-20 h-20 mb-4">
+                <div className="absolute inset-0 rounded-full border-4 border-emerald-500/20 animate-ping" />
+                <div className="w-16 h-16 rounded-full bg-emerald-950/80 border-2 border-emerald-500 flex items-center justify-center text-3xl font-extrabold text-emerald-400 font-mono shadow-inner">
+                  {countdown > 0 ? countdown : '⚡'}
+                </div>
+              </div>
+
+              <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-xs text-xs mb-4 text-left font-mono">
+                <div className="text-zinc-400 text-[10px] uppercase font-sans mb-1 font-semibold flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Detected Laptop:</span>
+                </div>
+                <div className="text-white font-bold truncate">{scannedResult.host}:{scannedResult.port}</div>
+                {scannedResult.code && <div className="text-emerald-400 text-[11px] mt-0.5 font-sans">PIN: {scannedResult.code}</div>}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleImmediateConnect}
+                className="w-full max-w-xs py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2"
+              >
+                <span>Turant Connect Karein (Connect Now) →</span>
+              </button>
+            </div>
+          )}
 
           {isInitializing && (
             <div className="absolute inset-0 bg-zinc-950/90 flex flex-col items-center justify-center gap-2 z-10">
