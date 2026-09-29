@@ -52,7 +52,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           <input
             id="input-device-name"
             type="text"
-            value={settings.deviceName}
+            value={settings.deviceName ?? ''}
             onChange={(e) => onUpdateSettings({ deviceName: e.target.value })}
             placeholder="e.g. Phone Controller"
             className="w-full bg-zinc-950 border border-zinc-700/80 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 shadow-inner"

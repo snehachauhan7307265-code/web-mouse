@@ -412,7 +412,7 @@ export const CustomControlsTab: React.FC<CustomControlsTabProps> = ({
                 <label className="text-xs text-zinc-400 block mb-1">Button Name</label>
                 <input
                   type="text"
-                  value={title}
+                  value={title ?? ''}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. My Macro, Discord Mute"
                   required
@@ -455,7 +455,7 @@ export const CustomControlsTab: React.FC<CustomControlsTabProps> = ({
               <div>
                 <label className="text-xs text-zinc-400 block mb-1">Action Type</label>
                 <select
-                  value={actionType}
+                  value={actionType ?? 'shortcut'}
                   onChange={(e) => setActionType(e.target.value as any)}
                   className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
                 >
@@ -474,7 +474,7 @@ export const CustomControlsTab: React.FC<CustomControlsTabProps> = ({
                   </label>
                   <input
                     type="text"
-                    value={shortcutKeysInput}
+                    value={shortcutKeysInput ?? ''}
                     onChange={(e) => setShortcutKeysInput(e.target.value)}
                     placeholder="e.g. ctrl, alt, del or win, d"
                     className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
@@ -487,7 +487,7 @@ export const CustomControlsTab: React.FC<CustomControlsTabProps> = ({
                   <label className="text-xs text-zinc-400 block mb-1">Target Key</label>
                   <input
                     type="text"
-                    value={keyInput}
+                    value={keyInput ?? ''}
                     onChange={(e) => setKeyInput(e.target.value)}
                     placeholder="e.g. enter, esc, f5, space"
                     className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
@@ -499,7 +499,7 @@ export const CustomControlsTab: React.FC<CustomControlsTabProps> = ({
                 <div>
                   <label className="text-xs text-zinc-400 block mb-1">Mouse Action</label>
                   <select
-                    value={mouseAction}
+                    value={mouseAction ?? 'left_click'}
                     onChange={(e) => setMouseAction(e.target.value as any)}
                     className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
                   >
@@ -515,7 +515,7 @@ export const CustomControlsTab: React.FC<CustomControlsTabProps> = ({
                 <div>
                   <label className="text-xs text-zinc-400 block mb-1">Quick Action</label>
                   <select
-                    value={quickAction}
+                    value={quickAction ?? 'desktop'}
                     onChange={(e) => setQuickAction(e.target.value as any)}
                     className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
                   >
@@ -533,7 +533,7 @@ export const CustomControlsTab: React.FC<CustomControlsTabProps> = ({
                 <div>
                   <label className="text-xs text-zinc-400 block mb-1">Text Snippet to Type</label>
                   <textarea
-                    value={textSnippet}
+                    value={textSnippet ?? ''}
                     onChange={(e) => setTextSnippet(e.target.value)}
                     placeholder="Text typed when button is pressed..."
                     className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none resize-none h-16"

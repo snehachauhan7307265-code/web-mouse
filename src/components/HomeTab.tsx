@@ -24,7 +24,8 @@ import {
   MessageSquare,
   Sparkles,
   Wifi,
-  MoreHorizontal
+  MoreHorizontal,
+  Sliders
 } from 'lucide-react';
 import { ConnectionStatus as ConnectionStatusType, ConnectedDeviceInfo, LogEntry, ComputerProfile, QuickActionId, Device, DeviceType, DeviceCapability } from '../types';
 import { getDeviceTypeLabel, getDeviceTypeColor } from '../utils/profiles';
@@ -491,6 +492,18 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             </div>
             <h4 className="font-semibold text-zinc-100 text-xs">Screen Projector</h4>
             <p className="text-[10px] text-zinc-400 mt-0.5">WebRTC screen share</p>
+          </button>
+
+          {/* Custom Controls */}
+          <button 
+            onClick={() => onNavigate('custom')}
+            className="flex flex-col items-start p-4 rounded-xl bg-zinc-900/80 hover:bg-zinc-850 active:bg-zinc-950 border border-zinc-800 transition-all active:scale-[0.98] group text-left"
+          >
+            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 group-hover:bg-amber-500/20 mb-2.5">
+              <Sliders className="w-5 h-5" />
+            </div>
+            <h4 className="font-semibold text-zinc-100 text-xs">Custom Controls</h4>
+            <p className="text-[10px] text-zinc-400 mt-0.5">Shortcuts & user buttons</p>
           </button>
         </div>
       </div>

@@ -18,7 +18,7 @@ interface ComputerProfilesModalProps {
 export const ComputerProfilesModal: React.FC<ComputerProfilesModalProps> = ({
   isOpen,
   onClose,
-  profiles,
+  profiles = [],
   activeProfileId,
   currentStatus,
   onSelectProfile,
@@ -26,8 +26,12 @@ export const ComputerProfilesModal: React.FC<ComputerProfilesModalProps> = ({
   onDeleteProfile,
   onAddNewComputer,
 }) => {
+  if (!isOpen) return null;
+
+  const safeProfiles = Array.isArray(profiles) ? profiles : [];
+
   // Convert ComputerProfile[] to Device[] for the unified DeviceManagerModal
-  const devices: Device[] = profiles.map((p) => {
+  const devices: Device[] = safeProfiles.map((p) => {
     const type: DeviceType = p.type || 'windows';
     return {
       id: p.id,
@@ -53,7 +57,7 @@ export const ComputerProfilesModal: React.FC<ComputerProfilesModalProps> = ({
       activeDeviceId={activeProfileId}
       currentStatus={currentStatus}
       onSelectDevice={(device) => {
-        const found = profiles.find((p) => p.id === device.id);
+        const found = safeProfiles.find((p) => p.id === device.id);
         if (found) {
           onSelectProfile(found);
         } else {

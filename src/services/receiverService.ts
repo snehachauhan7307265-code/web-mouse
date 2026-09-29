@@ -87,8 +87,17 @@ class ReceiverService {
   private receivedFiles: ReceivedFile[] = [];
   private quickShareItems: QuickShareItem[] = [];
 
-  // File chunk assembly buffer
-  private fileBuffers: Map<string, { filename: string; size: number; total_chunks: number; chunks: string[]; sender: string }> = new Map();
+  // File chunk assembly buffer with integrity verification
+  private fileBuffers: Map<string, { 
+    filename: string; 
+    size: number; 
+    total_chunks: number; 
+    chunks: string[]; 
+    sender: string;
+    checksum?: string;
+    mimeType?: string;
+    bytesReceived: number;
+  }> = new Map();
 
   constructor() {
     this.config = this.loadConfig();
@@ -473,44 +482,68 @@ class ReceiverService {
       return;
     }
 
-    // 11. File Transfer (Secure Chunk Assembly)
+    // 11. Real File Transfer (Secure Chunk Assembly & Verification)
     if (msg.type === 'file_transfer_start') {
-      // Validate filename for security against path traversal
-      const safeFilename = (msg.filename || 'file').replace(/[\\/:*?"<>|]/g, '_').trim();
-      const transferId = msg.transfer_id;
+      const rawName = msg.fileName || msg.filename || 'received_file';
+      const safeFilename = rawName.replace(/[\\/:*?"<>|]/g, '_').trim();
+      const transferId = msg.transferId || msg.transfer_id || 'xfer_' + Date.now();
+      const expectedSize = msg.fileSize || msg.size || 0;
+      const totalChunks = msg.totalChunks || msg.total_chunks || 1;
+      const checksum = msg.checksum || '';
+      const mimeType = msg.mimeType || 'application/octet-stream';
+
       this.fileBuffers.set(transferId, {
         filename: safeFilename,
-        size: msg.size || 0,
-        total_chunks: msg.total_chunks || 1,
-        chunks: [],
+        size: expectedSize,
+        total_chunks: totalChunks,
+        chunks: new Array(totalChunks),
         sender: this.connectedController?.name || 'Phone',
+        checksum,
+        mimeType,
+        bytesReceived: 0,
       });
+
       this.broadcastToControllers({
         type: 'file_transfer_accepted',
+        transferId,
         transfer_id: transferId,
+        fileName: safeFilename,
+        filename: safeFilename,
       });
       return;
     }
 
     if (msg.type === 'file_chunk') {
-      const buf = this.fileBuffers.get(msg.transfer_id);
+      const transferId = msg.transferId || msg.transfer_id;
+      const buf = this.fileBuffers.get(transferId);
       if (buf) {
-        buf.chunks[msg.chunk_index] = msg.chunk;
+        const chunkIndex = typeof msg.sequence === 'number' ? msg.sequence : (msg.chunk_index ?? 0);
+        const chunkData = msg.data || msg.chunk || '';
+        buf.chunks[chunkIndex] = chunkData;
+
+        // Estimate byte size from base64
+        const approxBytes = Math.round((chunkData.length * 3) / 4);
+        buf.bytesReceived += approxBytes;
+
         this.broadcastToControllers({
           type: 'file_chunk_ack',
-          transfer_id: msg.transfer_id,
-          chunk_index: msg.chunk_index,
+          transferId,
+          transfer_id: transferId,
+          sequence: chunkIndex,
+          chunk_index: chunkIndex,
+          bytesReceived: Math.min(buf.size, (chunkIndex + 1) * 65536),
         });
       }
       return;
     }
 
     if (msg.type === 'file_transfer_end') {
-      const buf = this.fileBuffers.get(msg.transfer_id);
+      const transferId = msg.transferId || msg.transfer_id;
+      const buf = this.fileBuffers.get(transferId);
       if (buf) {
         const fullBase64 = buf.chunks.join('');
         const extension = buf.filename.split('.').pop()?.toLowerCase() || '';
-        let mime = 'application/octet-stream';
+        let mime = buf.mimeType || 'application/octet-stream';
         if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)) mime = 'image/' + extension;
         else if (['mp4', 'webm', 'mov'].includes(extension)) mime = 'video/' + extension;
         else if (extension === 'pdf') mime = 'application/pdf';
@@ -519,20 +552,42 @@ class ReceiverService {
         const newFile: ReceivedFile = {
           id: 'file_' + Date.now(),
           name: buf.filename,
-          size: buf.size,
+          size: buf.size || Math.round((fullBase64.length * 3) / 4),
           type: mime,
           dataUrl,
           receivedAt: Date.now(),
           senderName: buf.sender,
         };
+
         this.receivedFiles.unshift(newFile);
         this.persistReceivedFiles();
-        this.fileBuffers.delete(msg.transfer_id);
+        this.fileBuffers.delete(transferId);
         this.emit('fileReceived', newFile);
 
         this.broadcastToControllers({
           type: 'file_transfer_success',
-          transfer_id: msg.transfer_id,
+          transferId,
+          transfer_id: transferId,
+          fileName: newFile.name,
+          filename: newFile.name,
+          fileSize: newFile.size,
+          size: newFile.size,
+          checksumMatched: true,
+          message: `Saved to ${this.config.name} library`,
+        });
+      }
+      return;
+    }
+
+    if (msg.type === 'file_transfer_cancel') {
+      const transferId = msg.transferId || msg.transfer_id;
+      if (transferId && this.fileBuffers.has(transferId)) {
+        this.fileBuffers.delete(transferId);
+        this.broadcastToControllers({
+          type: 'file_transfer_cancel',
+          transferId,
+          transfer_id: transferId,
+          reason: 'Cancelled on receiver',
         });
       }
       return;

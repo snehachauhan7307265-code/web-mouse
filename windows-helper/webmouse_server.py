@@ -16,6 +16,9 @@ import sys
 import argparse
 import os
 import base64
+import hashlib
+import re
+import time
 import webbrowser
 from pathlib import Path
 from typing import Set, Dict, Any, Optional
@@ -64,18 +67,22 @@ class WindowsNativeInput:
     Requires ZERO pip dependencies and works on all Windows systems."""
     def __init__(self):
         import ctypes
-        self.user32 = ctypes.windll.user32
+        windll = getattr(ctypes, "windll", None)
+        self.user32 = windll.user32 if windll else None
         self.PAUSE = 0.0
         self.FAILSAFE = False
 
     def size(self):
-        return (self.user32.GetSystemMetrics(0), self.user32.GetSystemMetrics(1))
+        if self.user32:
+            return (self.user32.GetSystemMetrics(0), self.user32.GetSystemMetrics(1))
+        return (1920, 1080)
 
     def moveRel(self, dx, dy, _pause=False):
-        # MOUSEEVENTF_MOVE = 0x0001
-        self.user32.mouse_event(0x0001, int(dx), int(dy), 0, 0)
+        if self.user32:
+            self.user32.mouse_event(0x0001, int(dx), int(dy), 0, 0)
 
     def click(self, button="left"):
+        if not self.user32: return
         if button == "left":
             self.user32.mouse_event(0x0002, 0, 0, 0, 0) # LEFTDOWN
             self.user32.mouse_event(0x0004, 0, 0, 0, 0) # LEFTUP
@@ -87,12 +94,14 @@ class WindowsNativeInput:
             self.user32.mouse_event(0x0040, 0, 0, 0, 0) # MIDDLEUP
 
     def doubleClick(self, button="left"):
+        if not self.user32: return
         import time
         self.click(button)
         time.sleep(0.05)
         self.click(button)
 
     def mouseDown(self, button="left"):
+        if not self.user32: return
         if button == "left":
             self.user32.mouse_event(0x0002, 0, 0, 0, 0)
         elif button == "right":
@@ -101,6 +110,7 @@ class WindowsNativeInput:
             self.user32.mouse_event(0x0020, 0, 0, 0, 0)
 
     def mouseUp(self, button="left"):
+        if not self.user32: return
         if button == "left":
             self.user32.mouse_event(0x0004, 0, 0, 0, 0)
         elif button == "right":
@@ -109,27 +119,29 @@ class WindowsNativeInput:
             self.user32.mouse_event(0x0040, 0, 0, 0, 0)
 
     def scroll(self, amount):
-        # MOUSEEVENTF_WHEEL = 0x0800
+        if not self.user32: return
         self.user32.mouse_event(0x0800, 0, 0, int(amount * 120), 0)
 
     def hscroll(self, amount):
-        # MOUSEEVENTF_HWHEEL = 0x1000
+        if not self.user32: return
         self.user32.mouse_event(0x1000, 0, 0, int(amount * 120), 0)
 
     def press(self, key):
+        if not self.user32: return
         vk = VK_CODE_MAP.get(str(key).lower())
         if vk:
             self.user32.keybd_event(vk, 0, 0, 0)
-            self.user32.keybd_event(vk, 0, 2, 0) # KEYEVENTF_KEYUP = 2
+            self.user32.keybd_event(vk, 0, 2, 0)
 
     def write(self, text, interval=0.001):
+        if not self.user32: return
         for char in text:
             code = ord(char)
-            # KEYEVENTF_UNICODE = 4, KEYEVENTF_KEYUP = 2
             self.user32.keybd_event(0, code, 4, 0)
             self.user32.keybd_event(0, code, 4 | 2, 0)
 
     def hotkey(self, *keys):
+        if not self.user32: return
         vks = [VK_CODE_MAP.get(str(k).lower()) for k in keys if VK_CODE_MAP.get(str(k).lower())]
         for vk in vks:
             self.user32.keybd_event(vk, 0, 0, 0)
@@ -314,28 +326,38 @@ class PurePythonWebSocketServer:
         import urllib.parse
         parsed = urllib.parse.urlparse(path)
         req_path = parsed.path
-        if req_path in ("/api/pairing-info", "/api/info", "/info"):
+        is_json_requested = "application/json" in headers.get("accept", "").lower() or "json" in parsed.query.lower()
+        if req_path in ("/health", "/status", "/api/health", "/api/status", "/api/pairing-info", "/api/info", "/info") or (req_path == "/" and is_json_requested):
             import secrets, time
             temp_token = secrets.token_hex(16)
             expires_at = int(time.time() + 60)
             self.server.qr_tokens[temp_token] = expires_at
             qr_payload = {
                 "type": "webmouse_pair",
-                "version": 1,
-                "host": current_lan_ip,
-                "port": self.server.port,
-                "token": temp_token,
-                "expiresAt": expires_at
-            }
-            data = {
-                "type": "host_pairing_info",
+                "protocol": "webmouse",
+                "version": 2,
                 "host": current_lan_ip,
                 "ip": current_lan_ip,
                 "port": self.server.port,
-                "version": 1,
+                "pairingCode": self.server.pairing_code,
+                "token": temp_token,
+                "deviceName": socket.gethostname(),
+                "expiresAt": expires_at
+            }
+            data = {
+                "status": "running",
+                "version": "2.0.0",
+                "deviceName": socket.gethostname(),
+                "lanIp": current_lan_ip,
+                "host": current_lan_ip,
+                "ip": current_lan_ip,
+                "port": self.server.port,
+                "pairingAvailable": True,
+                "type": "host_pairing_info",
                 "token": temp_token,
                 "pairingToken": temp_token,
                 "code": self.server.pairing_code,
+                "pairingCode": self.server.pairing_code,
                 "expiresAt": expires_at,
                 "qrPayload": qr_payload,
                 "connectedDevices": len(self.server.authenticated_clients)
@@ -346,6 +368,9 @@ class PurePythonWebSocketServer:
                 "Content-Type: application/json; charset=utf-8\r\n"
                 f"Content-Length: {len(body)}\r\n"
                 "Access-Control-Allow-Origin: *\r\n"
+                "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+                "Access-Control-Allow-Headers: *\r\n"
+                "Access-Control-Allow-Private-Network: true\r\n"
                 "Connection: close\r\n\r\n"
             )
             writer.write(resp.encode() + body)
@@ -865,6 +890,9 @@ class WebMouseServer:
         except Exception:
             self.screen_width, self.screen_height = (1920, 1080)
 
+        # Active Projector streaming tasks per client: { websocket: asyncio.Task }
+        self.projector_tasks: Dict[WebSocketServerProtocol, asyncio.Task] = {}
+
     def update_tray_status(self):
         if self.tray_manager:
             try:
@@ -966,24 +994,116 @@ class WebMouseServer:
                     except Exception as e:
                         print(f"Error processing {filepath}: {e}")
 
+    async def stream_projector_loop(self, websocket):
+        """
+        Tarika A: Captures real Windows desktop screen and streams JPEG base64 frames
+        directly to the phone over the open WebSocket connection.
+        Supports PIL ImageGrab, mss, or Windows native GDI screenshot fallback.
+        """
+        import io, time
+        print(f"[PROJECTOR] Started real-time screen stream to client.")
+        target_fps = 15
+        interval = 1.0 / target_fps
+        quality = 55
+        target_width = 1024
+
+        while True:
+            t_start = time.time()
+            img = None
+
+            # Attempt 1: PIL ImageGrab (standard with pyautogui)
+            try:
+                from PIL import ImageGrab, Image
+                img = ImageGrab.grab()
+            except Exception:
+                # Attempt 2: mss if installed
+                try:
+                    import mss
+                    with mss.mss() as sct:
+                        monitor = sct.monitors[1]
+                        sct_img = sct.grab(monitor)
+                        from PIL import Image
+                        img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                except Exception:
+                    # Attempt 3: Windows GDI via ctypes
+                    try:
+                        import ctypes
+                        from ctypes import wintypes
+                        from PIL import Image
+                        user32 = ctypes.windll.user32
+                        gdi32 = ctypes.windll.gdi32
+                        w = user32.GetSystemMetrics(0)
+                        h = user32.GetSystemMetrics(1)
+                        hdesktop = user32.GetDesktopWindow()
+                        hdc = user32.GetDC(hdesktop)
+                        memdc = gdi32.CreateCompatibleDC(hdc)
+                        bitmap = gdi32.CreateCompatibleBitmap(hdc, w, h)
+                        gdi32.SelectObject(memdc, bitmap)
+                        gdi32.BitBlt(memdc, 0, 0, w, h, hdc, 0, 0, 0x00CC0020) # SRCCOPY
+                        # Copy bits
+                        bmpinfo = (ctypes.c_byte * 40)()
+                        ctypes.c_uint32.from_buffer(bmpinfo, 0).value = 40
+                        ctypes.c_int32.from_buffer(bmpinfo, 4).value = w
+                        ctypes.c_int32.from_buffer(bmpinfo, 8).value = -h
+                        ctypes.c_uint16.from_buffer(bmpinfo, 12).value = 1
+                        ctypes.c_uint16.from_buffer(bmpinfo, 14).value = 32 # 32 bpp
+                        buf = (ctypes.c_byte * (w * h * 4))()
+                        gdi32.GetDIBits(memdc, bitmap, 0, h, buf, bmpinfo, 0)
+                        raw_bytes = bytes(buf)
+                        img = Image.frombytes("RGB", (w, h), raw_bytes, "raw", "BGRX")
+                        gdi32.DeleteObject(bitmap)
+                        gdi32.DeleteDC(memdc)
+                        user32.ReleaseDC(hdesktop, hdc)
+                    except Exception as e:
+                        print(f"[PROJECTOR] Screen capture error: {e}")
+                        img = None
+
+            if img:
+                try:
+                    orig_w, orig_h = img.size
+                    if orig_w > target_width:
+                        scale = target_width / float(orig_w)
+                        new_h = int(orig_h * scale)
+                        img = img.resize((target_width, new_h))
+                    
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=quality, optimize=True)
+                    b64_img = base64.b64encode(buf.getvalue()).decode("ascii")
+                    
+                    frame_msg = json.dumps({
+                        "type": "screen_frame",
+                        "image": f"data:image/jpeg;base64,{b64_img}",
+                        "timestamp": int(time.time() * 1000)
+                    })
+                    await websocket.send(frame_msg)
+                except Exception as send_err:
+                    print(f"[PROJECTOR] Error sending frame: {send_err}")
+                    break
+
+            elapsed = time.time() - t_start
+            sleep_time = max(0.01, interval - elapsed)
+            await asyncio.sleep(sleep_time)
+
     def print_banner(self):
         lan_ip = get_local_ip()
         code_spaced = "  ".join(list(self.pairing_code))
-        print("\n" + "=" * 62)
+        direct_url = f"http://{lan_ip}:{self.port}/"
+        print("\n" + "=" * 64)
         print("           WEBMOUSE V1 — WINDOWS HELPER (CMD)")
-        print("=" * 62)
+        print("=" * 64)
         print(f"  [STATUS]           RUNNING (DO NOT CLOSE THIS WINDOW)")
         print(f"  [LAPTOP WI-FI IP]  {lan_ip}")
         print(f"  [PORT]             {self.port}")
-        print("=" * 62)
+        print("=" * 64)
         print(f"  >>> 6-DIGIT PAIRING PIN:   [  {code_spaced}  ] <<<")
-        print("=" * 62)
+        print("=" * 64)
         print("  HOW TO CONNECT FROM YOUR PHONE:")
-        print(f"  1. Open WebMouse on your phone browser")
-        print(f"  2. Tap 'Enter 6-Digit PIN' (or scan QR)")
-        print(f"  3. Enter IP: {lan_ip}  and  PIN: {self.pairing_code}")
-        print(f"  4. Tap 'Connect' — Your phone controls your mouse!")
-        print("=" * 62 + "\n")
+        print(f"  👉 FASTEST (NO PIN NEEDED):")
+        print(f"     Open your phone camera/WebMouse and SCAN THE QR CODE.")
+        print(f"     Phone will connect DIRECTLY without entering any PIN!")
+        print(f"  👉 OR ENTER PIN MANUALLY:")
+        print(f"     Laptop IP: {lan_ip}   |   PIN: {self.pairing_code}")
+        print("=" * 64 + "\n")
 
     async def process_request(self, *args, **kwargs):
         """
@@ -1049,8 +1169,9 @@ class WebMouseServer:
             if header_map.get(':method', '').upper() == 'OPTIONS' or 'options' in path.lower():
                 return send_http(204, "text/plain", "")
 
-            # 2. Local Pairing API endpoint for host browser (CORS allowed for localhost & local network)
-            if req_path in ("/api/pairing-info", "/api/info", "/info"):
+            # 2. Local Health & Pairing API endpoint for host browser (CORS allowed for localhost & local network)
+            is_json_requested = "application/json" in header_map.get("accept", "").lower() or query_params.get("format", [""])[0] == "json"
+            if req_path in ("/health", "/status", "/api/health", "/api/status", "/api/pairing-info", "/api/info", "/info") or (req_path == "/" and is_json_requested):
                 temp_token = secrets.token_hex(16)
                 expires_at = int(time.time() + 60) # 60 seconds one-time temporary token
                 self.qr_tokens[temp_token] = expires_at
@@ -1058,31 +1179,37 @@ class WebMouseServer:
                 current_lan_ip = get_local_ip()
                 qr_payload = {
                     "type": "webmouse_pair",
-                    "version": 1,
+                    "protocol": "webmouse",
+                    "version": 2,
                     "host": current_lan_ip,
+                    "ip": current_lan_ip,
                     "port": self.port,
+                    "pairingCode": self.pairing_code,
                     "token": temp_token,
+                    "deviceName": socket.gethostname(),
                     "expiresAt": expires_at
                 }
-
-                print(f"[DEBUG] QR generated: host={current_lan_ip}:{self.port}, token={temp_token[:8]}..., expires_at={expires_at}")
-                print(f"[DEBUG] QR payload: {json.dumps(qr_payload)}")
-                print(f"[DEBUG] detected LAN IP: {current_lan_ip}")
 
                 pair_url = f"http://{current_lan_ip}:{self.port}/pair?token={temp_token}&code={self.pairing_code}"
 
                 data = {
-                    "type": "host_pairing_info",
+                    "status": "running",
+                    "version": "2.0.0",
+                    "deviceName": socket.gethostname(),
+                    "lanIp": current_lan_ip,
                     "host": current_lan_ip,
                     "ip": current_lan_ip,
                     "port": self.port,
-                    "version": 1,
+                    "pairingAvailable": True,
+                    "type": "host_pairing_info",
                     "token": temp_token,
                     "pairingToken": temp_token,
                     "code": self.pairing_code,
+                    "pairingCode": self.pairing_code,
                     "expiresAt": expires_at,
                     "qrPayload": qr_payload,
-                    "pairUrl": pair_url
+                    "pairUrl": pair_url,
+                    "connectedDevices": len(self.authenticated_clients)
                 }
                 return send_http(200, "application/json", json.dumps(data))
 
@@ -1496,20 +1623,6 @@ class WebMouseServer:
                             "type": "auth_result",
                             "success": True,
                             "computerName": socket.gethostname(),
-                            "deviceType": "windows",
-                            "platform": "windows",
-                            "capabilities": [
-                                "mouse",
-                                "keyboard",
-                                "media",
-                                "presentation",
-                                "file_transfer",
-                                "quick_share",
-                                "screen_sender",
-                                "custom_controls",
-                                "clipboard_sync",
-                                "tv_remote"
-                            ],
                             "screenWidth": self.screen_width,
                             "screenHeight": self.screen_height,
                             "message": "Authentication successful"
@@ -1686,7 +1799,71 @@ class WebMouseServer:
                     except Exception as e:
                         print(f"Error presentation control: {e}")
 
-                # 17. Quick Controls
+                # 17. Quick Controls & Real Screenshot Capture
+                elif msg_type == "take_screenshot" or (msg_type == "quick_control" and str(data.get("action", "")).lower() == "screenshot"):
+                    try:
+                        import datetime, io
+                        img = None
+                        try:
+                            from PIL import ImageGrab
+                            img = ImageGrab.grab()
+                        except Exception:
+                            try:
+                                import mss
+                                with mss.mss() as sct:
+                                    monitor = sct.monitors[1]
+                                    sct_img = sct.grab(monitor)
+                                    from PIL import Image
+                                    img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                            except Exception:
+                                pass
+
+                        if img:
+                            ss_dir = Path.home() / "Downloads" / "WebMouse" / "Screenshots"
+                            ss_dir.mkdir(parents=True, exist_ok=True)
+                            now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                            ss_path = ss_dir / f"Screenshot_{now_str}.jpg"
+                            img.save(ss_path, "JPEG", quality=85)
+
+                            # Scale for quick WebSocket phone preview
+                            max_dim = 1400
+                            preview_img = img
+                            if img.width > max_dim or img.height > max_dim:
+                                scale = min(max_dim / img.width, max_dim / img.height)
+                                preview_img = img.resize((int(img.width * scale), int(img.height * scale)))
+
+                            buf = io.BytesIO()
+                            preview_img.save(buf, "JPEG", quality=75)
+                            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+                            await websocket.send(json.dumps({
+                                "type": "screenshot_result",
+                                "success": True,
+                                "image": f"data:image/jpeg;base64,{b64}",
+                                "filename": ss_path.name,
+                                "timestamp": int(time.time() * 1000)
+                            }))
+                            print(f"[SCREENSHOT] Captured and sent to phone: {ss_path.name}")
+                        else:
+                            # Fallback: trigger Windows printscreen key
+                            pyautogui.press("printscreen")
+                            await websocket.send(json.dumps({
+                                "type": "screenshot_result",
+                                "success": False,
+                                "message": "Screenshot key triggered on Windows PC."
+                            }))
+                    except Exception as e:
+                        print(f"Error capturing screenshot: {e}")
+                        try:
+                            pyautogui.press("printscreen")
+                        except Exception:
+                            pass
+                        await websocket.send(json.dumps({
+                            "type": "screenshot_result",
+                            "success": False,
+                            "message": str(e)
+                        }))
+
                 elif msg_type == "quick_control":
                     action = str(data.get("action", "")).lower()
                     try:
@@ -1695,69 +1872,21 @@ class WebMouseServer:
                         elif action == "lock":
                             import ctypes
                             ctypes.windll.user32.LockWorkStation()
-                        elif action == "screenshot":
-                            pyautogui.press("printscreen")
                         elif action == "alttab":
                             pyautogui.hotkey("alt", "tab")
+                        elif action == "taskmgr":
+                            pyautogui.hotkey("ctrl", "shift", "esc")
+                        elif action == "explorer":
+                            pyautogui.hotkey("win", "e")
+                        elif action == "run":
+                            pyautogui.hotkey("win", "r")
+                        elif action == "taskview":
+                            pyautogui.hotkey("win", "tab")
+                        elif action == "snip":
+                            pyautogui.hotkey("win", "shift", "s")
                         print(f"QUICK CONTROL: {action}")
                     except Exception as e:
                         print(f"Error quick control: {e}")
-
-                # 17b. TV Remote Control (Universal D-Pad & Navigation)
-                elif msg_type == "tv_remote":
-                    action = str(data.get("action", "")).lower()
-                    try:
-                        if action == "up":
-                            pyautogui.press("up")
-                        elif action == "down":
-                            pyautogui.press("down")
-                        elif action == "left":
-                            pyautogui.press("left")
-                        elif action == "right":
-                            pyautogui.press("right")
-                        elif action == "select":
-                            pyautogui.press("enter")
-                        elif action == "back":
-                            pyautogui.press("esc")
-                        elif action == "home":
-                            pyautogui.press("win")
-                        elif action == "menu":
-                            pyautogui.press("apps")
-                        elif action == "power":
-                            pyautogui.hotkey("win", "l")
-                        elif action == "vol_up":
-                            pyautogui.press("volumeup")
-                        elif action == "vol_down":
-                            pyautogui.press("volumedown")
-                        elif action == "mute":
-                            pyautogui.press("volumemute")
-                        print(f"TV REMOTE: {action}")
-                    except Exception as e:
-                        print(f"Error executing tv_remote action {action}: {e}")
-
-                # 17c. Device Info & Capability Query
-                elif msg_type == "get_device_info":
-                    await websocket.send(json.dumps({
-                        "type": "device_info",
-                        "name": socket.gethostname(),
-                        "deviceType": "windows",
-                        "platform": "windows",
-                        "capabilities": [
-                            "mouse", "keyboard", "media", "presentation", "file_transfer",
-                            "quick_share", "screen_sender", "custom_controls", "clipboard_sync", "tv_remote"
-                        ],
-                        "screenWidth": self.screen_width,
-                        "screenHeight": self.screen_height
-                    }))
-
-                elif msg_type == "get_capabilities":
-                    await websocket.send(json.dumps({
-                        "type": "capabilities",
-                        "capabilities": [
-                            "mouse", "keyboard", "media", "presentation", "file_transfer",
-                            "quick_share", "screen_sender", "custom_controls", "clipboard_sync", "tv_remote"
-                        ]
-                    }))
 
                 # 18. Link Sharing
                 elif msg_type == "share_link":
@@ -1766,38 +1895,25 @@ class WebMouseServer:
                         print(f"OPENING LINK: {url}")
                         webbrowser.open(url)
 
-                # 18b. Allowlisted Application Launch (Phase 3 AI Control)
-                elif msg_type == "open_app":
-                    app_name = str(data.get("app", "")).lower().strip()
-                    allowed_apps = {
-                        "chrome": "https://www.google.com",
-                        "edge": "microsoft-edge:",
-                        "notepad": "notepad.exe",
-                        "calc": "calc.exe",
-                        "calculator": "calc.exe",
-                        "explorer": "explorer.exe",
-                        "taskmgr": "taskmgr.exe",
-                        "youtube": "https://www.youtube.com"
-                    }
-                    if app_name in allowed_apps:
-                        target = allowed_apps[app_name]
-                        print(f"AI SAFE APP LAUNCH: {app_name} -> {target}")
-                        if target.startswith("http") or target.startswith("microsoft-edge:"):
-                            webbrowser.open(target)
-                        else:
-                            try:
-                                import subprocess
-                                subprocess.Popen([target])
-                            except Exception as e:
-                                print(f"Error launching {target}: {e}")
-                    else:
-                        print(f"[SECURITY] Rejected unallowlisted app launch: {app_name}")
-
-                # 19. Text Sharing (Copy to PC Clipboard)
+                # 19. Text Sharing (Copy to PC Clipboard with clip.exe fallback)
                 elif msg_type == "share_text":
                     text = str(data.get("text", ""))
-                    if text and pyperclip:
-                        pyperclip.copy(text)
+                    if text:
+                        copied = False
+                        if pyperclip:
+                            try:
+                                pyperclip.copy(text)
+                                copied = True
+                            except Exception:
+                                pass
+                        if not copied:
+                            try:
+                                import subprocess
+                                proc = subprocess.Popen(['clip'], stdin=subprocess.PIPE, shell=True)
+                                proc.communicate(text.encode('utf-16le'))
+                                copied = True
+                            except Exception:
+                                pass
                         print(f"COPIED TEXT TO CLIPBOARD: {text[:20]}...")
                         await websocket.send(json.dumps({
                             "type": "notification",
@@ -1817,97 +1933,183 @@ class WebMouseServer:
                         except Exception as e:
                             print(f"Error getting clipboard: {e}")
 
-                # 21. File Transfer Phone -> PC
-                elif msg_type == "file_transfer_start":
-                    filename = data.get("filename", "unknown_file")
-                    transfer_id = data.get("transfer_id", "")
-                    downloads_dir = Path.home() / "Downloads" / "WebMouse"
-                    downloads_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    # Prevent path traversal
-                    filename = os.path.basename(filename)
-                    filepath = downloads_dir / filename
-                    
-                    # Make unique if exists
-                    base, ext = os.path.splitext(filename)
+                # 21. Real File Transfer Phone -> PC (Pipeline with SHA-256 integrity check)
+                elif msg_type in ["file_transfer_start", "file_start"]:
+                    transfer_id = str(data.get("transferId") or data.get("transfer_id") or f"xfer_{int(time.time()*1000)}")
+                    raw_filename = str(data.get("fileName") or data.get("filename") or "shared_file")
+                    expected_size = int(data.get("fileSize") or data.get("size") or 0)
+                    expected_checksum = str(data.get("checksum") or "").strip()
+                    total_chunks = int(data.get("totalChunks") or data.get("total_chunks") or 1)
+
+                    # Safe target folder: Downloads/WebMouse Transfers
+                    downloads_dir = Path.home() / "Downloads" / "WebMouse Transfers"
+                    try:
+                        downloads_dir.mkdir(parents=True, exist_ok=True)
+                    except Exception:
+                        downloads_dir = Path.home() / "Downloads" / "WebMouse"
+                        downloads_dir.mkdir(parents=True, exist_ok=True)
+
+                    # Strict path traversal sanitization
+                    safe_filename = os.path.basename(raw_filename)
+                    safe_filename = re.sub(r'[<>:"/\\|?*\x00-\x1F]', '_', safe_filename).strip('. ')
+                    if not safe_filename:
+                        safe_filename = f"file_{int(time.time())}"
+
+                    # Unique filename if file already exists: example (1).ext
+                    base, ext = os.path.splitext(safe_filename)
+                    filepath = downloads_dir / safe_filename
                     counter = 1
                     while filepath.exists():
-                        filepath = downloads_dir / f"{base}_{counter}{ext}"
+                        filepath = downloads_dir / f"{base} ({counter}){ext}"
                         counter += 1
-                        
+
                     self.active_file_transfers = getattr(self, "active_file_transfers", {})
                     if websocket not in self.active_file_transfers:
                         self.active_file_transfers[websocket] = {}
-                        
+
                     try:
                         f = open(filepath, "wb")
                         self.active_file_transfers[websocket][transfer_id] = {
                             "file": f,
-                            "path": filepath
+                            "path": filepath,
+                            "expected_size": expected_size,
+                            "expected_checksum": expected_checksum,
+                            "total_chunks": total_chunks,
+                            "bytes_received": 0,
+                            "hasher": hashlib.sha256(),
+                            "start_time": time.time(),
                         }
-                        print(f"FILE TRANSFER ACCEPTED: {filepath}")
+                        print(f"[FILE TRANSFER] Accepted: {filepath.name} (Target: {filepath})")
                         await websocket.send(json.dumps({
                             "type": "file_transfer_accepted",
-                            "transfer_id": transfer_id
+                            "transferId": transfer_id,
+                            "transfer_id": transfer_id,
+                            "fileName": filepath.name,
+                            "filename": filepath.name,
+                            "savedPath": str(filepath)
                         }))
                     except Exception as e:
-                        print(f"Error opening file for transfer: {e}")
+                        print(f"[FILE TRANSFER ERROR] Failed to create target file: {e}")
                         await websocket.send(json.dumps({
                             "type": "file_transfer_rejected",
+                            "transferId": transfer_id,
                             "transfer_id": transfer_id,
-                            "reason": str(e)
+                            "reason": f"Cannot create target file: {e}"
                         }))
 
                 elif msg_type == "file_chunk":
-                    transfer_id = data.get("transfer_id", "")
-                    chunk_index = data.get("chunk_index", 0)
-                    chunk = data.get("chunk", "")
-                    
+                    transfer_id = str(data.get("transferId") or data.get("transfer_id") or "")
+                    chunk_index = int(data.get("sequence") if data.get("sequence") is not None else data.get("chunk_index", 0))
+                    chunk_b64 = str(data.get("data") or data.get("chunk") or "")
+
                     active = getattr(self, "active_file_transfers", {}).get(websocket, {})
                     if transfer_id in active:
+                        entry = active[transfer_id]
                         try:
-                            file_data = base64.b64decode(chunk)
-                            active[transfer_id]["file"].write(file_data)
+                            file_data = base64.b64decode(chunk_b64)
+                            entry["file"].write(file_data)
+                            entry["hasher"].update(file_data)
+                            entry["bytes_received"] += len(file_data)
+
                             await websocket.send(json.dumps({
                                 "type": "file_chunk_ack",
+                                "transferId": transfer_id,
                                 "transfer_id": transfer_id,
-                                "chunk_index": chunk_index
+                                "chunk_index": chunk_index,
+                                "sequence": chunk_index,
+                                "bytesReceived": entry["bytes_received"]
                             }))
                         except Exception as e:
-                            print(f"Error writing chunk: {e}")
+                            print(f"[FILE CHUNK ERROR] {transfer_id} chunk {chunk_index}: {e}")
+                            await websocket.send(json.dumps({
+                                "type": "file_transfer_error",
+                                "transferId": transfer_id,
+                                "transfer_id": transfer_id,
+                                "message": f"Error writing chunk {chunk_index}: {e}"
+                            }))
 
                 elif msg_type == "file_transfer_end":
-                    transfer_id = data.get("transfer_id", "")
+                    transfer_id = str(data.get("transferId") or data.get("transfer_id") or "")
                     active = getattr(self, "active_file_transfers", {}).get(websocket, {})
                     if transfer_id in active:
+                        entry = active[transfer_id]
                         try:
-                            active[transfer_id]["file"].close()
+                            entry["file"].flush()
+                            entry["file"].close()
+                            filepath = entry["path"]
+                            bytes_received = entry["bytes_received"]
+                            computed_hash = entry["hasher"].hexdigest().lower()
+                            expected_hash = (entry.get("expected_checksum") or str(data.get("checksum") or "")).lower().strip()
+
+                            # Integrity Verification Check
+                            checksum_matched = True
+                            if expected_hash and not expected_hash.startswith("fnv_"):
+                                if computed_hash != expected_hash:
+                                    checksum_matched = False
+                                    print(f"[FILE VERIFICATION FAILED] {filepath.name} Hash mismatch: got {computed_hash}, expected {expected_hash}")
+                                    try:
+                                        if filepath.exists():
+                                            os.remove(filepath)
+                                    except Exception:
+                                        pass
+                                    del active[transfer_id]
+                                    await websocket.send(json.dumps({
+                                        "type": "file_transfer_error",
+                                        "transferId": transfer_id,
+                                        "transfer_id": transfer_id,
+                                        "message": "File verification failed: SHA-256 checksum mismatch"
+                                    }))
+                                    return
+
                             del active[transfer_id]
-                            print("FILE TRANSFER SUCCESS")
+                            print(f"[FILE TRANSFER COMPLETE] {filepath.name} ({bytes_received} bytes) SHA-256: {computed_hash}")
+
                             await websocket.send(json.dumps({
                                 "type": "file_transfer_success",
-                                "transfer_id": transfer_id
+                                "transferId": transfer_id,
+                                "transfer_id": transfer_id,
+                                "fileName": filepath.name,
+                                "filename": filepath.name,
+                                "fileSize": bytes_received,
+                                "size": bytes_received,
+                                "savedPath": str(filepath),
+                                "checksumMatched": checksum_matched,
+                                "checksum": computed_hash,
+                                "message": f"Saved {filepath.name} to {filepath.parent.name}"
                             }))
                             await websocket.send(json.dumps({
                                 "type": "notification",
-                                "message": "File received and saved to Downloads/WebMouse"
+                                "message": f"File received: {filepath.name} ({bytes_received // 1024} KB)"
                             }))
                         except Exception as e:
-                            print(f"Error closing file: {e}")
-                            
+                            print(f"[FILE ERROR] Closing {transfer_id}: {e}")
+                            await websocket.send(json.dumps({
+                                "type": "file_transfer_error",
+                                "transferId": transfer_id,
+                                "transfer_id": transfer_id,
+                                "message": f"Error completing transfer: {e}"
+                            }))
+
                 elif msg_type == "file_transfer_cancel":
-                    transfer_id = data.get("transfer_id", "")
+                    transfer_id = str(data.get("transferId") or data.get("transfer_id") or "")
                     active = getattr(self, "active_file_transfers", {}).get(websocket, {})
                     if transfer_id in active:
+                        entry = active[transfer_id]
                         try:
-                            active[transfer_id]["file"].close()
-                            filepath = active[transfer_id]["path"]
+                            entry["file"].close()
+                            filepath = entry["path"]
                             if filepath.exists():
                                 os.remove(filepath)
                             del active[transfer_id]
-                            print(f"FILE TRANSFER CANCELLED: {filepath}")
+                            print(f"[FILE TRANSFER CANCELLED] {filepath}")
+                            await websocket.send(json.dumps({
+                                "type": "file_transfer_cancel",
+                                "transferId": transfer_id,
+                                "transfer_id": transfer_id,
+                                "reason": "Transfer cancelled and temporary file cleaned"
+                            }))
                         except Exception as e:
-                            print(f"Error cancelling transfer: {e}")
+                            print(f"[FILE ERROR] Cancelling {transfer_id}: {e}")
 
                 # 22. Computer -> Phone Transfer (Architecture stub)
                 # To send a file from computer to phone, the server should send:
@@ -1947,11 +2149,46 @@ class WebMouseServer:
                             except Exception as e:
                                 print(f"Error relaying WebRTC signal: {e}")
 
+                # 24. PC Screen Mirroring (Projector: Tarika A)
+                elif msg_type == "start_projector":
+                    print(f"[PROJECTOR] Client requested start_projector")
+                    # Cancel existing task if any
+                    if websocket in self.projector_tasks:
+                        task = self.projector_tasks[websocket]
+                        if not task.done():
+                            task.cancel()
+                    
+                    # Start streaming loop in background
+                    loop_task = asyncio.create_task(self.stream_projector_loop(websocket))
+                    self.projector_tasks[websocket] = loop_task
+                    await websocket.send(json.dumps({
+                        "type": "projector_status",
+                        "active": True,
+                        "message": "PC screen streaming active"
+                    }))
+
+                elif msg_type == "stop_projector":
+                    print(f"[PROJECTOR] Client requested stop_projector")
+                    if websocket in self.projector_tasks:
+                        task = self.projector_tasks.pop(websocket, None)
+                        if task and not task.done():
+                            task.cancel()
+                    await websocket.send(json.dumps({
+                        "type": "projector_status",
+                        "active": False,
+                        "message": "PC screen streaming stopped"
+                    }))
+
         except websockets.ConnectionClosed:
             pass
         except Exception as e:
             print(f"[!] Exception with client {client_addr}: {e}")
         finally:
+            # Stop any running projector task for this client
+            if websocket in self.projector_tasks:
+                task = self.projector_tasks.pop(websocket, None)
+                if task and not task.done():
+                    task.cancel()
             info = self.client_info.pop(websocket, client_addr)
             self.authenticated_clients.discard(websocket)
             self.update_tray_status()

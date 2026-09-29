@@ -202,7 +202,7 @@ export const DeviceManagerModal: React.FC<DeviceManagerModalProps> = ({
                               <div className="flex items-center gap-1.5 mt-0.5">
                                 <input
                                   type="text"
-                                  value={editName}
+                                  value={editName ?? ''}
                                   onChange={(e) => setEditName(e.target.value)}
                                   className="bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-indigo-500 w-full"
                                   autoFocus

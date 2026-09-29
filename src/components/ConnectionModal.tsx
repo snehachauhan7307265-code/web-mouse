@@ -1,5 +1,9 @@
-import React, { useState } from 'react';
-import { X, Wifi, ShieldCheck, Monitor, HelpCircle, ArrowRight, CheckCircle2, AlertTriangle, RefreshCw, QrCode, Scan, Terminal, KeyRound, Download } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { 
+  X, Wifi, ShieldCheck, Laptop, HelpCircle, ArrowRight, CheckCircle2, 
+  AlertTriangle, RefreshCw, QrCode, Scan, ChevronDown, ChevronUp, 
+  Download, Sparkles, Check, Smartphone, Monitor
+} from 'lucide-react';
 import { ConnectionConfig, ConnectionStatus, ConnectedDeviceInfo } from '../types';
 import { QRScanner } from './QRScanner';
 import { QRCodePairing } from './QRCodePairing';
@@ -31,243 +35,202 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   onOpenHelperGuide,
   initialView = 'normal',
 }) => {
-  const [host, setHost] = useState(config.host);
-  const [port, setPort] = useState(config.port.toString());
-  const [code, setCode] = useState(config.code);
-  const [autoReconnect, setAutoReconnect] = useState(config.autoReconnect);
+  const [host, setHost] = useState(config.host || '');
+  const [port, setPort] = useState(config.port ? config.port.toString() : '8765');
+  const [code, setCode] = useState(config.code || '');
+  const [autoReconnect, setAutoReconnect] = useState(config.autoReconnect ?? true);
 
-  const [activeModalTab, setActiveModalTab] = useState<'connect' | 'download'>('connect');
   const [showScanner, setShowScanner] = useState(false);
   const [showQRHost, setShowQRHost] = useState(false);
-  const [helperStatus, setHelperStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
-  const [qrHostIp, setQrHostIp] = useState('');
-  const [qrHostPort, setQrHostPort] = useState(8765);
-  const [qrToken, setQrToken] = useState<string | undefined>();
-  const [qrExpiresAt, setQrExpiresAt] = useState<number | undefined>();
-  const [helperError, setHelperError] = useState<string | undefined>();
-  const [showManual, setShowManual] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [helperState, setHelperState] = useState<'checking' | 'detected' | 'not_found'>('checking');
+  const [detectedHelper, setDetectedHelper] = useState<{
+    deviceName: string;
+    lanIp: string;
+    port: number;
+    token?: string;
+    code?: string;
+    version?: string;
+  } | null>(null);
 
-  React.useEffect(() => {
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // Proactive helper detection via HTTP / Health & WebSocket
+  const probeLocalHelper = async () => {
+    setHelperState('checking');
+    let found = false;
+
+    // 1. Try local health endpoints
+    const endpoints = [
+      'http://127.0.0.1:8765/health',
+      'http://localhost:8765/health',
+      'http://127.0.0.1:8765/api/pairing-info',
+      'http://localhost:8765/api/pairing-info'
+    ];
+
+    for (const ep of endpoints) {
+      if (found) break;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1200);
+        const res = await fetch(ep, { signal: controller.signal, mode: 'cors' });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          const lanIp = (data.lanIp || data.host || data.ip || '').trim();
+          if (lanIp && lanIp !== 'localhost' && !lanIp.startsWith('127.')) {
+            found = true;
+            setDetectedHelper({
+              deviceName: data.deviceName || 'My Laptop',
+              lanIp,
+              port: parseInt(data.port, 10) || 8765,
+              token: data.pairingToken || data.token,
+              code: data.code || data.pairingCode,
+              version: data.version || '2.0.0'
+            });
+            setHost(lanIp);
+            setPort((data.port || 8765).toString());
+            if (data.code) setCode(data.code);
+            setHelperState('detected');
+            return;
+          }
+        }
+      } catch (e) {
+        // Continue trying next endpoint
+      }
+    }
+
+    // 2. Try WebSocket Probe if HTTP was blocked by browser sandbox
+    if (!found) {
+      try {
+        const ws = new WebSocket('ws://127.0.0.1:8765');
+        const wsTimeout = setTimeout(() => {
+          try { ws.close(); } catch (e) {}
+          if (!found) setHelperState('not_found');
+        }, 1500);
+
+        ws.onopen = () => {
+          ws.send(JSON.stringify({ type: 'host_pairing_info' }));
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'host_pairing_info' || data.type === 'server_info') {
+              found = true;
+              clearTimeout(wsTimeout);
+              const lanIp = (data.host || data.lanIp || data.ip || '').trim();
+              setDetectedHelper({
+                deviceName: data.deviceName || 'My Laptop',
+                lanIp: lanIp || '127.0.0.1',
+                port: parseInt(data.port, 10) || 8765,
+                token: data.pairingToken || data.token,
+                code: data.code || data.pairingCode,
+                version: data.version || '2.0.0'
+              });
+              if (lanIp && !lanIp.startsWith('127.')) setHost(lanIp);
+              setHelperState('detected');
+              ws.close();
+            }
+          } catch (e) {}
+        };
+
+        ws.onerror = () => {
+          clearTimeout(wsTimeout);
+          if (!found) setHelperState('not_found');
+        };
+      } catch (err) {
+        if (!found) setHelperState('not_found');
+      }
+    }
+  };
+
+  useEffect(() => {
     if (isOpen) {
-      setHost(config.host);
-      setPort(config.port.toString());
-      setCode(config.code);
-      setAutoReconnect(config.autoReconnect);
+      setHost(config.host || '');
+      setPort(config.port ? config.port.toString() : '8765');
+      setCode(config.code || '');
+      setAutoReconnect(config.autoReconnect ?? true);
 
-      if (initialView === 'download_helper') {
-        setActiveModalTab('download');
-        setShowScanner(false);
-        setShowQRHost(false);
-        setShowManual(false);
-      } else if (initialView === 'scanner') {
-        setActiveModalTab('connect');
+      if (initialView === 'scanner') {
         setShowScanner(true);
         setShowQRHost(false);
-        setShowManual(false);
       } else if (initialView === 'qr_host') {
-        setActiveModalTab('connect');
-        fetchLocalHostAndShowQR();
-        setShowManual(false);
-      } else if (initialView === 'manual_pin') {
-        setActiveModalTab('connect');
+        setShowQRHost(true);
         setShowScanner(false);
-        setShowQRHost(false);
-        setShowManual(true);
       } else {
-        setActiveModalTab('connect');
         setShowScanner(false);
         setShowQRHost(false);
+        // Automatically check if helper is active
+        probeLocalHelper();
       }
     }
   }, [isOpen, initialView, config.host, config.port, config.code, config.autoReconnect]);
 
   if (!isOpen) return null;
 
-  const handleConnect = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleConnect = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     onSaveAndConnect({
       host: host.trim(),
       port: parseInt(port, 10) || 8765,
       code: code.trim(),
       token: config.token,
-      lastComputerName: config.lastComputerName,
+      lastComputerName: config.lastComputerName || detectedHelper?.deviceName || 'My Laptop',
       autoReconnect,
     });
   };
 
   const handleScan = (data: any) => {
     setShowScanner(false);
+    if (!data) return;
     const scannedHost = (data.host || (data.receiverId ? 'receiver_local' : '') || '').trim();
     const scannedPort = parseInt(data.port, 10) || 8765;
-    const scannedCode = (data.code || data.pin || (data.token && String(data.token).length <= 8 ? data.token : '') || '').trim();
+    const scannedCode = (data.code || data.pin || data.pairingCode || (data.token && String(data.token).length <= 8 ? data.token : '') || '').trim();
     const scannedToken = (data.token || data.qrToken || '').trim();
-    const scannedName = data.name || data.computerName || (data.type === 'android_tv' ? 'Living Room TV' : data.type === 'smart_board' ? 'Classroom Board' : 'My Laptop');
+    const scannedName = data.name || data.deviceName || data.computerName || 'My Laptop';
 
     if (scannedHost) setHost(scannedHost);
     if (scannedPort) setPort(scannedPort.toString());
     if (scannedCode) setCode(scannedCode);
 
     if (scannedHost) {
-      // Auto-connect with credentials from QR
       onSaveAndConnect({
         host: scannedHost,
         port: scannedPort,
-        code: scannedCode || scannedToken, // Keep code populated so password-only and token servers both work!
+        code: scannedCode || scannedToken,
         qrToken: scannedToken,
-        token: undefined, // Clear old token until server grants fresh permanent token
+        token: undefined,
         lastComputerName: scannedName,
-        autoReconnect: true, // Always auto-reconnect on successful scan
+        autoReconnect: true,
       });
       onClose();
-    } else if (!code && !scannedCode) {
-      setTimeout(() => document.getElementById('input-pairing-code')?.focus(), 100);
     }
   };
 
-  const fetchLocalHostAndShowQR = () => {
-    setShowQRHost(true);
-    setHelperStatus('checking');
-    setHelperError(undefined);
+  const handleDownloadInstaller = () => {
+    setIsDownloading(true);
+    const link = document.createElement('a');
+    link.href = '/WebMouseHelperSetup.bat';
+    link.download = 'WebMouseHelperSetup.bat';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 
-    const isCloudPreview = typeof window !== 'undefined' && (
-      window.location.protocol === 'https:' ||
-      window.location.hostname.includes('.run.app') ||
-      window.location.hostname.includes('.vercel.app')
-    );
-
-    let activeWs: WebSocket | null = null;
-    let completed = false;
-
-    const handleSuccess = (detectedIp: string, portNum: number, tokenVal: string, expiresAt?: number) => {
-      if (completed) return;
-      completed = true;
-      clearTimeout(timeout);
-      try { activeWs?.close(); } catch (e) {}
-
-      setHelperStatus('connected');
-      setQrHostIp(detectedIp);
-      setQrHostPort(portNum);
-      setQrToken(tokenVal);
-      setQrExpiresAt(expiresAt);
-      setHost(detectedIp);
-      setPort(portNum.toString());
-    };
-
-    const handleFail = () => {
-      if (completed) return;
-      completed = true;
-      clearTimeout(timeout);
-      try { activeWs?.close(); } catch (e) {}
-
-      setHelperStatus('disconnected');
-      if (isCloudPreview) {
-        setHelperError('QR pairing must be started from the WebMouse app running locally on this laptop.');
-      } else {
-        setHelperError('Start the WebMouse Windows Helper and try again.');
-      }
-    };
-
-    const timeout = setTimeout(() => {
-      if (!completed) {
-        handleFail();
-      }
-    }, 3000);
-
-    // 1. Try Fast Local HTTP API Gateway (handles port 8765 directly)
-    const tryHttp = async () => {
-      const endpoints = [
-        'http://127.0.0.1:8765/api/pairing-info',
-        'http://localhost:8765/api/pairing-info'
-      ];
-      for (const ep of endpoints) {
-        if (completed) return;
-        try {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 1200);
-          const res = await fetch(ep, { signal: controller.signal, mode: 'cors' });
-          clearTimeout(timer);
-          if (res.ok) {
-            const data = await res.json();
-            const detectedIp = (data.host || data.ip || '').trim();
-            const portNum = parseInt(data.port, 10) || 8765;
-            const tokenVal = data.token || data.pairingToken;
-
-            if (
-              detectedIp &&
-              detectedIp !== 'localhost' &&
-              detectedIp !== '127.0.0.1' &&
-              !detectedIp.startsWith('127.') &&
-              tokenVal
-            ) {
-              handleSuccess(detectedIp, portNum, tokenVal, data.expiresAt);
-              return;
-            }
-          }
-        } catch (e) {}
-      }
-    };
-    tryHttp();
-
-    // 2. Try WebSocket Gateway
-    const trySocket = (url: string, onFail: () => void) => {
-      if (completed) return;
-      try {
-        const ws = new WebSocket(url);
-        activeWs = ws;
-
-        ws.onopen = () => {
-          ws.send(JSON.stringify({ type: 'host_pairing_info' }));
-        };
-
-        ws.onmessage = (e) => {
-          try {
-            const data = JSON.parse(e.data);
-            if (data.type === 'host_pairing_info' || data.type === 'server_info') {
-              const detectedIp = (data.host || data.ip || '').trim();
-              const portNum = parseInt(data.port, 10) || 8765;
-              const tokenVal = data.pairingToken || data.token;
-
-              if (
-                detectedIp &&
-                detectedIp !== 'localhost' &&
-                detectedIp !== '127.0.0.1' &&
-                !detectedIp.startsWith('127.') &&
-                !detectedIp.includes('.run.app') &&
-                !detectedIp.includes('.vercel.app') &&
-                tokenVal
-              ) {
-                handleSuccess(detectedIp, portNum, tokenVal, data.expiresAt);
-              }
-            }
-          } catch (err) {}
-        };
-
-        ws.onerror = () => {
-          if (!completed) onFail();
-        };
-      } catch (err) {
-        if (!completed) onFail();
-      }
-    };
-
-    trySocket('ws://127.0.0.1:8765', () => {
-      trySocket('ws://localhost:8765', () => {
-        // If HTTP also failed or is blocked by browser mixed-content
-        setTimeout(() => {
-          if (!completed) handleFail();
-        }, 1200);
-      });
-    });
+    // After 3 seconds, automatically re-probe for the newly installed helper
+    setTimeout(() => {
+      setIsDownloading(false);
+      probeLocalHelper();
+    }, 4000);
   };
 
   const isConnected = status === 'connected';
-  const isConnecting = status === 'connecting' || status === 'reconnecting';
-  const hasTrustedDevice = Boolean(config.token);
-  const computerDisplayName = config.lastComputerName || pairedDevice?.computerName || 'My Laptop';
+  const isConnecting = status === 'connecting';
+  const hasTrustedDevice = Boolean(config.host && (config.token || config.code));
+  const computerDisplayName = config.lastComputerName || detectedHelper?.deviceName || 'My Laptop';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      
       {showScanner && (
         <QRScanner
           onScan={handleScan}
@@ -277,19 +240,18 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
           }}
           onManualPin={() => {
             setShowScanner(false);
-            setShowManual(true);
+            setShowAdvanced(true);
           }}
         />
       )}
+
       {showQRHost && (
         <QRCodePairing 
-          helperStatus={helperStatus}
-          host={qrHostIp || host || config.host || ''} 
-          port={qrHostPort || parseInt(port, 10) || config.port || 8765} 
-          token={qrToken || code || config.code || ''} 
-          expiresAt={qrExpiresAt} 
-          errorMessage={helperError}
-          onRefresh={fetchLocalHostAndShowQR}
+          helperStatus={helperState === 'detected' ? 'connected' : helperState === 'checking' ? 'checking' : 'disconnected'}
+          host={detectedHelper?.lanIp || host || config.host || ''} 
+          port={detectedHelper?.port || parseInt(port, 10) || config.port || 8765} 
+          token={detectedHelper?.token || detectedHelper?.code || code || config.code || ''} 
+          onRefresh={probeLocalHelper}
           onClose={() => {
             setShowQRHost(false);
             if (initialView === 'qr_host') onClose();
@@ -304,512 +266,327 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
       <div 
         id="modal-connection-dialog"
-        className={`w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden text-zinc-100 flex flex-col max-h-[90vh] ${(showScanner || showQRHost) ? 'hidden' : ''}`}
+        className={`w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden text-zinc-100 flex flex-col max-h-[92vh] ${(showScanner || showQRHost) ? 'hidden' : ''}`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800/80 bg-zinc-950/40">
-          <div className="flex items-center gap-2.5">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950/60">
+          <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-              <Wifi className="w-5 h-5" />
+              <Laptop className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-semibold leading-tight">Connect to PC</h2>
+              <h2 className="text-base font-bold text-white tracking-tight">WebMouse Connection</h2>
               <p className="text-xs text-zinc-400">
-                {hasTrustedDevice ? `Paired with ${computerDisplayName}` : 'Control your computer over local Wi-Fi'}
+                {hasTrustedDevice ? `Paired with ${computerDisplayName}` : 'Zero-Setup Wi-Fi Control'}
               </p>
             </div>
           </div>
           <button
             id="btn-close-conn-modal"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+            className="p-1.5 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Modal Tabs: Connect / Pair vs Download Helper */}
-        <div className="flex border-b border-zinc-800 bg-zinc-950/70 px-4 pt-2 gap-2 shrink-0">
-          <button
-            id="tab-btn-modal-connect"
-            type="button"
-            onClick={() => setActiveModalTab('connect')}
-            className={`py-2 px-3.5 text-xs font-semibold rounded-t-xl transition-all flex items-center justify-center gap-1.5 border-b-2 ${
-              activeModalTab === 'connect'
-                ? 'border-indigo-500 text-white bg-zinc-900'
-                : 'border-transparent text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            <Wifi className="w-3.5 h-3.5" />
-            <span>Connect / Pair</span>
-          </button>
-          
-          <button
-            id="tab-btn-modal-download"
-            type="button"
-            onClick={() => setActiveModalTab('download')}
-            className={`py-2 px-3.5 text-xs font-semibold rounded-t-xl transition-all flex items-center justify-center gap-1.5 border-b-2 ${
-              activeModalTab === 'download'
-                ? 'border-indigo-500 text-white bg-zinc-900'
-                : 'border-transparent text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            <Download className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Download Helper</span>
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-5 space-y-4 overflow-y-auto">
-          {/* TAB 1: Connect / Pair */}
-          {activeModalTab === 'connect' && (
+        {/* Modal Scrollable Body */}
+        <div className="p-6 space-y-5 overflow-y-auto">
+          {/* SCENARIO A: RETURNING USER WITH SAVED DEVICE */}
+          {hasTrustedDevice && (
             <div className="space-y-4">
-              {/* Paired Device Section (when already paired / connecting) */}
-              {hasTrustedDevice ? (
-                <div className="space-y-4">
-              {/* 1. Connected State */}
-              {isConnected && (
-                <div className="p-6 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 text-center flex flex-col items-center justify-center space-y-2 shadow-inner">
+              {/* Connected Badge */}
+              {isConnected ? (
+                <div className="p-5 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 text-center space-y-2">
                   <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-semibold">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                    🟢 Connected
+                    <span>🟢 Connected</span>
                   </div>
-                  <h3 className="text-xl font-bold text-white tracking-tight">
-                    {computerDisplayName}
-                  </h3>
-                  <p className="text-xs text-emerald-300 font-medium">WebMouse Active</p>
-                  <p className="text-[11px] text-zinc-400 font-mono pt-1">
-                    {config.host}:{config.port}
-                  </p>
-                </div>
-              )}
-
-              {/* 2. Reconnecting / Connecting State */}
-              {isConnecting && (
-                <div className="p-5 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-center flex flex-col items-center justify-center space-y-2">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-semibold">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    🟡 Reconnecting...
-                  </div>
-                  <h3 className="text-base font-bold text-white">
-                    {computerDisplayName}
-                  </h3>
-                  <p className="text-xs text-zinc-400">
-                    Saved connection &bull; {config.host}:{config.port}
-                  </p>
-                </div>
-              )}
-
-              {/* 3. Error / Computer not found State */}
-              {status === 'error' && (
-                <div className="p-5 rounded-2xl bg-zinc-950/90 border border-amber-500/30 space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 shrink-0">
-                      <AlertTriangle className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-white">Computer not found</h3>
-                      <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                        Could not reach <strong className="text-zinc-200">{computerDisplayName}</strong> at <code className="text-indigo-300 bg-zinc-900 px-1 py-0.5 rounded font-mono">{config.host}:{config.port}</code>. If your laptop&apos;s IP changed, scan a new QR code.
-                      </p>
-                    </div>
-                  </div>
-
+                  <h3 className="text-xl font-bold text-white tracking-tight">{computerDisplayName}</h3>
+                  <p className="text-xs text-zinc-400 font-mono">{config.host}:{config.port}</p>
+                  
                   <div className="pt-2">
                     <button
                       type="button"
-                      onClick={() => setShowScanner(true)}
-                      className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25"
+                      onClick={onDisconnect}
+                      className="w-full py-2.5 px-4 rounded-xl bg-rose-600/90 hover:bg-rose-500 active:scale-95 text-white font-medium text-xs transition-all shadow-md"
                     >
-                      <Scan className="w-4 h-4" />
-                      <span>Scan New QR</span>
+                      Disconnect
                     </button>
                   </div>
                 </div>
-              )}
-
-              {/* 4. Auth Failed State */}
-              {status === 'auth_failed' && (
-                <div className="p-5 rounded-2xl bg-rose-950/30 border border-rose-500/30 text-center space-y-3">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-semibold">
-                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-                    Pairing Credentials Invalid
+              ) : (
+                /* Saved Device Reconnect Card */
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-zinc-950 via-zinc-900 to-indigo-950/30 border border-indigo-500/30 space-y-3.5 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Known Device
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Available
+                    </span>
                   </div>
-                  <p className="text-xs text-zinc-300 leading-relaxed">
-                    The saved pairing credential was rejected. Scan a new QR code on your PC to refresh pairing.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowScanner(true)}
-                    className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition-all flex items-center justify-center gap-2"
-                  >
-                    <Scan className="w-4 h-4" />
-                    <span>Scan New QR</span>
-                  </button>
-                </div>
-              )}
 
-              {/* Auto-reconnect Toggle */}
-              <div className="flex items-center justify-between py-2 border-t border-zinc-800/50">
-                <label htmlFor="chk-auto-reconnect-paired" className="text-xs text-zinc-300 cursor-pointer">
-                  Automatically reconnect
-                </label>
-                <input
-                  id="chk-auto-reconnect-paired"
-                  type="checkbox"
-                  checked={autoReconnect}
-                  onChange={(e) => {
-                     setAutoReconnect(e.target.checked);
-                     onSaveAndConnect({ ...config, autoReconnect: e.target.checked });
-                  }}
-                  className="w-4 h-4 accent-indigo-500 rounded bg-zinc-900 border-zinc-700 cursor-pointer"
-                />
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col gap-2.5">
-                {isConnected ? (
-                  <button
-                    type="button"
-                    onClick={onDisconnect}
-                    className="w-full py-3 px-4 rounded-xl bg-rose-600/90 hover:bg-rose-500 active:scale-[0.98] text-white font-medium text-sm transition-all shadow-lg shadow-rose-600/20"
-                  >
-                    Disconnect
-                  </button>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={(e) => { e.preventDefault(); handleConnect(e); }}
-                      disabled={isConnecting}
-                      className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 active:scale-[0.98] text-white font-medium text-sm transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      {isConnecting ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Reconnecting...</span>
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw className="w-4 h-4" />
-                          <span>Retry Connection</span>
-                        </>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowScanner(true)}
-                      className="py-3 px-3.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] text-zinc-200 hover:text-white font-medium text-sm transition-all flex items-center justify-center gap-1.5 border border-zinc-700"
-                      title="Scan new QR in case IP changed"
-                    >
-                      <Scan className="w-4 h-4 text-emerald-400" />
-                      <span>New QR</span>
-                    </button>
-                  </div>
-                )}
-                
-                <button
-                  type="button"
-                  onClick={onForgetDevice}
-                  className="w-full py-2.5 px-4 rounded-xl bg-zinc-900/80 border border-zinc-800 hover:bg-zinc-800 active:scale-[0.98] text-zinc-400 hover:text-rose-400 font-medium text-xs transition-all text-center"
-                >
-                  Forget Device
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* First-time / Direct Connection Form */
-            <div className="space-y-4">
-              {/* Quick Pair Buttons */}
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  id="btn-modal-scan-qr"
-                  type="button"
-                  onClick={() => setShowScanner(true)}
-                  className="py-3 px-3 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 active:scale-[0.98] text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20"
-                >
-                  <Scan className="w-4 h-4 text-emerald-100" />
-                  <span>Scan QR Code</span>
-                </button>
-                
-                <button
-                  id="btn-modal-host-pc-qr"
-                  type="button"
-                  onClick={fetchLocalHostAndShowQR}
-                  className="py-3 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] text-zinc-200 font-medium text-xs transition-all flex items-center justify-center gap-2 border border-zinc-700"
-                >
-                  <QrCode className="w-4 h-4 text-indigo-400" />
-                  <span>Laptop QR</span>
-                </button>
-              </div>
-
-              {/* Divider */}
-              <div className="flex items-center gap-3 text-zinc-500 py-0.5">
-                <div className="flex-1 h-px bg-zinc-800" />
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                  Or enter details manually
-                </span>
-                <div className="flex-1 h-px bg-zinc-800" />
-              </div>
-
-              {/* Manual Direct Connection Form */}
-              <form onSubmit={handleConnect} className="space-y-3.5">
-                {/* IP Address & Port */}
-                <div className="grid grid-cols-3 gap-2.5">
-                  <div className="col-span-2 space-y-1.5">
-                    <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
-                      <span>Laptop Wi-Fi IP</span>
-                      <button
-                        type="button"
-                        onClick={onOpenHelperGuide}
-                        className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-0.5"
-                      >
-                        <span>How to find?</span>
-                      </button>
-                    </label>
-                    <input
-                      id="input-computer-ip"
-                      type="text"
-                      value={host}
-                      onChange={(e) => setHost(e.target.value)}
-                      placeholder="e.g. 192.168.1.15"
-                      disabled={isConnected}
-                      className="w-full bg-zinc-950/80 border border-zinc-700 rounded-xl px-3.5 py-2.5 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-zinc-300">Port</label>
-                    <input
-                      id="input-computer-port"
-                      type="number"
-                      value={port}
-                      onChange={(e) => setPort(e.target.value)}
-                      placeholder="8765"
-                      disabled={isConnected}
-                      className="w-full bg-zinc-950/80 border border-zinc-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50 text-center font-mono"
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* 6-Digit Pairing Code */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-zinc-300 flex items-center justify-between">
-                    <span>6-Digit Pairing PIN</span>
-                    <span className="text-[11px] text-zinc-400 font-mono">From laptop screen</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
-                      <KeyRound className="w-4 h-4 text-indigo-400" />
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-xl font-bold shrink-0">
+                      💻
                     </div>
-                    <input
-                      id="input-pairing-code"
-                      type="text"
-                      maxLength={6}
-                      value={code}
-                      onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                      placeholder="e.g. 582914"
-                      disabled={isConnected}
-                      className="w-full bg-zinc-950/80 border border-zinc-700 rounded-xl pl-10 pr-3.5 py-2.5 text-base font-mono tracking-widest text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
-                      required
-                    />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-base font-bold text-white truncate">{computerDisplayName}</h3>
+                      <p className="text-xs text-zinc-400 font-mono truncate">{config.host}:{config.port}</p>
+                    </div>
                   </div>
-                </div>
 
-                {/* Auto-reconnect Checkbox */}
-                <div className="flex items-center justify-between py-1">
-                  <label htmlFor="chk-auto-reconnect" className="text-xs text-zinc-300 cursor-pointer">
-                    Automatically reconnect if signal drops
-                  </label>
-                  <input
-                    id="chk-auto-reconnect"
-                    type="checkbox"
-                    checked={autoReconnect}
-                    onChange={(e) => setAutoReconnect(e.target.checked)}
-                    className="w-4 h-4 accent-indigo-500 rounded bg-zinc-900 border-zinc-700 cursor-pointer"
-                  />
-                </div>
+                  {status === 'error' && (
+                    <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-xs text-amber-300 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>Can&apos;t reach {computerDisplayName}. If IP changed, scan a new QR code.</span>
+                    </div>
+                  )}
 
-                {/* Submit Connect Button */}
-                <div className="pt-2">
+                  {/* Connect Button */}
                   <button
-                    id="btn-connect-submit"
-                    type="submit"
+                    id="btn-reconnect-saved-device"
+                    type="button"
+                    onClick={() => handleConnect()}
                     disabled={isConnecting}
-                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 active:scale-[0.98] text-white font-medium text-sm transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 active:scale-[0.98] text-white font-bold text-sm transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {isConnecting ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Connecting...</span>
+                        <span>Connecting to {computerDisplayName}...</span>
                       </>
                     ) : (
                       <>
-                        <span>Connect to Laptop</span>
+                        <span>Connect</span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}
                   </button>
+
+                  <div className="flex items-center justify-between pt-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setShowScanner(true)}
+                      className="text-zinc-400 hover:text-indigo-400 flex items-center gap-1 transition-colors"
+                    >
+                      <Scan className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Scan New QR</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onForgetDevice}
+                      className="text-zinc-500 hover:text-rose-400 transition-colors"
+                    >
+                      Forget Device
+                    </button>
+                  </div>
                 </div>
-              </form>
+              )}
             </div>
           )}
 
-          {/* Quick Helper Guide Callout */}
+          {/* SCENARIO B: FIRST TIME SETUP / NEW DEVICE */}
+          {!hasTrustedDevice && (
+            <div className="space-y-4">
+              {/* Step 1: WebMouse Windows Helper */}
+              <div className="p-4 rounded-2xl bg-zinc-950/80 border border-zinc-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-[11px] font-bold">1</span>
+                    Install WebMouse Helper
+                  </span>
+                  {helperState === 'detected' ? (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      Helper Ready
+                    </span>
+                  ) : helperState === 'checking' ? (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                      Checking laptop...
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-semibold text-zinc-400">One-time setup</span>
+                  )}
+                </div>
+
+                {helperState === 'detected' && detectedHelper ? (
+                  <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between text-xs">
+                    <div>
+                      <p className="font-bold text-white">{detectedHelper.deviceName}</p>
+                      <p className="text-zinc-400 font-mono text-[11px]">{detectedHelper.lanIp}:{detectedHelper.port}</p>
+                    </div>
+                    <span className="text-emerald-400 font-bold text-[11px] flex items-center gap-1">
+                      <Check className="w-4 h-4" /> Ready
+                    </span>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    <p className="text-xs text-zinc-400 leading-relaxed">
+                      Download and run the 1-click Windows helper. It automatically configures Windows startup, firewall, and runs in the system tray.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        id="btn-install-webmouse-helper"
+                        type="button"
+                        onClick={handleDownloadInstaller}
+                        disabled={isDownloading}
+                        className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition-all"
+                      >
+                        <Download className="w-4 h-4 text-indigo-100" />
+                        <span>{isDownloading ? 'Downloading Installer...' : 'Install WebMouse Helper'}</span>
+                      </button>
+                      <button
+                        id="btn-detect-helper"
+                        type="button"
+                        onClick={probeLocalHelper}
+                        title="Check if Helper is already running"
+                        className="py-3 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-200 text-xs font-semibold flex items-center justify-center border border-zinc-700 transition-colors"
+                      >
+                        <RefreshCw className={`w-4 h-4 text-indigo-400 ${helperState === 'checking' ? 'animate-spin' : ''}`} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Step 2: Scan QR Code */}
+              <div className="p-4 rounded-2xl bg-zinc-950/80 border border-zinc-800 space-y-3">
+                <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[11px] font-bold">2</span>
+                  Scan QR Code
+                </span>
+
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  <button
+                    id="btn-open-scanner"
+                    type="button"
+                    onClick={() => setShowScanner(true)}
+                    className="py-3.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition-all"
+                  >
+                    <Scan className="w-4 h-4" />
+                    <span>Scan from Phone</span>
+                  </button>
+                  <button
+                    id="btn-show-laptop-qr"
+                    type="button"
+                    onClick={() => setShowQRHost(true)}
+                    className="py-3.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] text-zinc-200 font-semibold text-xs flex items-center justify-center gap-2 border border-zinc-700 transition-all"
+                  >
+                    <QrCode className="w-4 h-4 text-indigo-400" />
+                    <span>Show Laptop QR</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-400 text-center leading-relaxed">
+                  Open WebMouse on your phone and scan the QR code to connect instantly.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ADVANCED ACCORDION (DEVELOPER & MANUAL FALLBACK) */}
           <div className="pt-2 border-t border-zinc-800/80">
             <button
-              id="btn-open-helper-instructions"
+              id="btn-toggle-advanced-conn"
               type="button"
-              onClick={() => setActiveModalTab('download')}
-              className="w-full py-2 px-3 rounded-xl bg-zinc-950/60 hover:bg-zinc-950 border border-zinc-800 text-xs text-zinc-400 hover:text-indigo-400 flex items-center justify-between transition-colors"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="w-full py-2 px-3 rounded-xl bg-zinc-950/40 hover:bg-zinc-950 border border-zinc-800/60 text-xs text-zinc-400 hover:text-zinc-200 flex items-center justify-between transition-colors"
             >
-              <div className="flex items-center gap-2">
-                <Download className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Download Windows Helper (ZIP &amp; .bat)</span>
-              </div>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <span>Advanced Connection Options</span>
+              {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
+
+            {showAdvanced && (
+              <div className="mt-3 p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-4 animate-in fade-in duration-150">
+                <form onSubmit={handleConnect} className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2 space-y-1">
+                      <label className="text-[11px] font-medium text-zinc-400">Manual IP Address</label>
+                      <input
+                        id="input-adv-ip"
+                        type="text"
+                        value={host ?? ''}
+                        onChange={(e) => setHost(e.target.value)}
+                        placeholder="192.168.1.x"
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-zinc-400">Port</label>
+                      <input
+                        id="input-adv-port"
+                        type="number"
+                        value={port ?? '8765'}
+                        onChange={(e) => setPort(e.target.value)}
+                        placeholder="8765"
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-white text-center focus:outline-none focus:border-indigo-500"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-zinc-400">6-Digit PIN (if required)</label>
+                    <input
+                      id="input-adv-code"
+                      type="text"
+                      maxLength={6}
+                      value={code ?? ''}
+                      onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="e.g. 582914"
+                      className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono tracking-widest text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between py-1">
+                    <label htmlFor="chk-auto-reconnect-adv" className="text-xs text-zinc-400 cursor-pointer">
+                      Auto-reconnect on signal drop
+                    </label>
+                    <input
+                      id="chk-auto-reconnect-adv"
+                      type="checkbox"
+                      checked={autoReconnect}
+                      onChange={(e) => setAutoReconnect(e.target.checked)}
+                      className="w-4 h-4 accent-indigo-500 rounded bg-zinc-900 border-zinc-700 cursor-pointer"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-colors shadow-md"
+                  >
+                    Direct Connect
+                  </button>
+                </form>
+
+                {/* Developer / Portable ZIP */}
+                <div className="pt-2 border-t border-zinc-800 text-[11px] space-y-2">
+                  <span className="font-semibold text-zinc-400">Developer &amp; Portable Package:</span>
+                  <div className="flex gap-2">
+                    <a
+                      href="/WebMouse-Windows.zip"
+                      download="WebMouse-Windows.zip"
+                      className="flex-1 py-1.5 px-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 text-center transition-colors truncate"
+                    >
+                      📦 Portable ZIP
+                    </a>
+                    <a
+                      href="/Uninstall-WebMouseHelper.bat"
+                      download="Uninstall-WebMouseHelper.bat"
+                      className="py-1.5 px-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-rose-400 text-center transition-colors"
+                    >
+                      Uninstall Helper
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-            </div>
-          )}
-
-          {/* TAB 2: Download Helper */}
-          {activeModalTab === 'download' && (
-            <div className="space-y-4">
-              {/* 1-Click ZIP Download (Recommended) */}
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950/60 via-zinc-900 to-indigo-950/40 border border-indigo-500/40 space-y-3 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <Terminal className="w-4 h-4 text-indigo-400" />
-                    Windows Helper 1-Click Setup
-                  </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
-                    Green CMD
-                  </span>
-                </div>
-
-                <a
-                  id="btn-download-webmouse-zip"
-                  href="/WebMouse-Windows.zip"
-                  download="WebMouse-Windows.zip"
-                  className="w-full py-3.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-indigo-600/30 transition-all"
-                >
-                  <Download className="w-5 h-5 text-indigo-100" />
-                  <span>📦 Download WebMouse (ZIP - Recommended)</span>
-                </a>
-
-                <p className="text-[11px] text-zinc-400 text-center leading-relaxed">
-                  (Ya phir aap direct <code className="text-zinc-200 font-mono">run_webmouse.bat</code> aur <code className="text-zinc-200 font-mono">webmouse_server.py</code> dono files ko apne ek hi folder me save kar sakte hain):
-                </p>
-
-                <div className="grid grid-cols-2 gap-2 pt-0.5">
-                  <a
-                    id="btn-download-bat"
-                    href="/run_webmouse.bat"
-                    download="run_webmouse.bat"
-                    className="py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-200 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors border border-zinc-700"
-                  >
-                    <Download className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>run_webmouse.bat</span>
-                  </a>
-                  <a
-                    id="btn-download-py"
-                    href="/webmouse_server.py"
-                    download="webmouse_server.py"
-                    className="py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-200 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors border border-zinc-700"
-                  >
-                    <Download className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>webmouse_server.py</span>
-                  </a>
-                </div>
-              </div>
-
-              {/* Simple Steps in Hindi / English */}
-              <div className="p-4 rounded-2xl bg-zinc-950/80 border border-zinc-800 space-y-3">
-                <h3 className="text-xs font-bold text-zinc-200 uppercase tracking-wider flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>🚀 Ab aapko bas ye simple steps follow karne hain:</span>
-                </h3>
-
-                <div className="space-y-2.5 text-xs text-zinc-300">
-                  <div className="flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">1</span>
-                    <p className="leading-relaxed">
-                      <strong className="text-white">Download ZIP:</strong> Upar diye gaye <strong className="text-indigo-300">📦 Download WebMouse (ZIP)</strong> button par click karke ZIP download karein.
-                    </p>
-                  </div>
-
-                  <div className="flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">2</span>
-                    <p className="leading-relaxed">
-                      <strong className="text-white">Extract All:</strong> ZIP file ko right-click karke <strong className="text-zinc-100">&quot;Extract All&quot;</strong> karein.
-                    </p>
-                  </div>
-
-                  <div className="flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">3</span>
-                    <p className="leading-relaxed">
-                      <strong className="text-white">Double-Click:</strong> Us folder ke andar <code className="text-emerald-400 bg-black/60 px-1.5 py-0.5 rounded font-mono font-semibold">run_webmouse.bat</code> par Double-Click karein!
-                    </p>
-                  </div>
-
-                  <div className="flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">4</span>
-                    <p className="leading-relaxed">
-                      <strong className="text-white">Green CMD Window &amp; QR:</strong> Laptop par <strong className="text-emerald-400">Green Command Prompt</strong> window khulegi aur browser me QR Code khulega jisme aapka Wi-Fi IP aur QR token hoga.
-                    </p>
-                  </div>
-
-                  <div className="flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">5</span>
-                    <p className="leading-relaxed">
-                      <strong className="text-emerald-300">Scan QR to Direct Connect:</strong> Apne phone se <strong className="text-emerald-400">Scan QR Code</strong> dabakar QR scan karein — <span className="text-white font-semibold">phone bina PIN dale seedha laptop se 1-second me connect ho jayega!</span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Green Command Prompt Visual Mockup */}
-              <div className="rounded-xl overflow-hidden border border-zinc-800 shadow-xl bg-black font-mono text-[11px]">
-                <div className="bg-zinc-900 px-3 py-1.5 border-b border-zinc-800 flex items-center justify-between text-zinc-400 text-[10px]">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block"></span>
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block"></span>
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block"></span>
-                    <span className="ml-1 text-zinc-300">Command Prompt - run_webmouse.bat</span>
-                  </span>
-                  <span className="text-emerald-400 font-semibold">color 0A</span>
-                </div>
-                <div className="p-3 text-[#00ff66] space-y-1 select-text leading-tight overflow-x-auto">
-                  <p className="opacity-70">&gt; WebMouse V2 — Windows Helper Server [PORT 8765]</p>
-                  <p>==============================================================</p>
-                  <p className="font-bold">          WEBMOUSE V2 — WINDOWS HELPER (CMD)</p>
-                  <p>==============================================================</p>
-                  <p>  [STATUS]           RUNNING (DO NOT CLOSE THIS WINDOW)</p>
-                  <p>  [LAPTOP WI-FI IP]  192.168.1.15</p>
-                  <p>  [PORT]             8765</p>
-                  <p>==============================================================</p>
-                  <p className="text-white font-bold bg-emerald-950/80 py-0.5 px-1 rounded">
-                    &gt;&gt;&gt; 6-DIGIT PAIRING PIN:   [  5  8  2  9  1  4  ] &lt;&lt;&lt;
-                  </p>
-                  <p>==============================================================</p>
-                  <p className="opacity-80">Awaiting connection from phone...</p>
-                </div>
-              </div>
-
-              {/* Action button to switch to connect tab */}
-              <button
-                id="btn-goto-connect-tab"
-                type="button"
-                onClick={() => setActiveModalTab('connect')}
-                className="w-full py-3 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] text-white font-semibold text-xs flex items-center justify-center gap-2 border border-zinc-700 transition-all"
-              >
-                <KeyRound className="w-4 h-4 text-indigo-400" />
-                <span>Got the 6-Digit PIN? Enter PIN &amp; Connect →</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>

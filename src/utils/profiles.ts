@@ -10,6 +10,12 @@ export function getComputerProfiles(): ComputerProfile[] {
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
       }
+      // Auto-heal if a single object was accidentally stored previously
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (parsed as any).id) {
+        const healed: ComputerProfile[] = [parsed as ComputerProfile];
+        saveComputerProfiles(healed);
+        return healed;
+      }
     }
   } catch (e) {
     console.error('Failed to read computer profiles:', e);
@@ -57,14 +63,16 @@ export function getComputerProfiles(): ComputerProfile[] {
 
 export function saveComputerProfiles(profiles: ComputerProfile[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+    const safeList = Array.isArray(profiles) ? profiles : [];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(safeList));
   } catch (e) {
     console.error('Failed to save computer profiles:', e);
   }
 }
 
-export function upsertComputerProfile(profileData: Partial<ComputerProfile> & { host: string }): ComputerProfile {
-  const profiles = getComputerProfiles();
+export function upsertComputerProfile(profileData: Partial<ComputerProfile> & { host: string }): ComputerProfile[] {
+  const currentProfiles = getComputerProfiles();
+  const profiles = Array.isArray(currentProfiles) ? [...currentProfiles] : [];
   const existingIndex = profiles.findIndex(
     (p) => (profileData.id && p.id === profileData.id) || (p.host && p.host.toLowerCase() === profileData.host.toLowerCase())
   );
@@ -92,11 +100,13 @@ export function upsertComputerProfile(profileData: Partial<ComputerProfile> & { 
   }
 
   saveComputerProfiles(profiles);
-  return updatedProfile;
+  return profiles;
 }
 
 export function renameComputerProfile(id: string, newName: string): ComputerProfile[] {
-  const profiles = getComputerProfiles().map((p) => {
+  const currentProfiles = getComputerProfiles();
+  const safeList = Array.isArray(currentProfiles) ? currentProfiles : [];
+  const profiles = safeList.map((p) => {
     if (p.id === id) {
       return { ...p, name: newName.trim() || p.name };
     }
@@ -107,7 +117,9 @@ export function renameComputerProfile(id: string, newName: string): ComputerProf
 }
 
 export function deleteComputerProfile(id: string): ComputerProfile[] {
-  const profiles = getComputerProfiles().filter((p) => p.id !== id);
+  const currentProfiles = getComputerProfiles();
+  const safeList = Array.isArray(currentProfiles) ? currentProfiles : [];
+  const profiles = safeList.filter((p) => p.id !== id);
   saveComputerProfiles(profiles);
   return profiles;
 }

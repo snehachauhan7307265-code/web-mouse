@@ -153,11 +153,11 @@ export const ShareTab: React.FC<ShareTabProps> = ({
             ) : (
               <div className="space-y-2.5">
                 {transfers.map((t) => {
-                  const progressPct = Math.round(t.progress * 100);
-                  const isFinished = t.status === 'success';
-                  const isError = t.status === 'error';
-                  const isCancelled = t.status === 'cancelled';
-                  const isRunning = t.status === 'uploading' || t.status === 'downloading';
+                  const progressPct = t.progress;
+                  const isFinished = t.status === 'COMPLETED' || (t.status as any) === 'success';
+                  const isError = t.status === 'FAILED' || (t.status as any) === 'error';
+                  const isCancelled = t.status === 'CANCELLED' || (t.status as any) === 'cancelled';
+                  const isRunning = t.status === 'TRANSFERRING' || t.status === 'VALIDATING' || t.status === 'WAITING_FOR_RECEIVER' || t.status === 'VERIFYING' || (t.status as any) === 'uploading' || (t.status as any) === 'downloading';
 
                   return (
                     <div

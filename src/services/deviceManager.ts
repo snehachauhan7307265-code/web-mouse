@@ -345,6 +345,10 @@ class DeviceManagerClass {
     return updated;
   }
 
+  public renameDevice(id: string, newName: string): boolean {
+    return this.updateDevice(id, { name: newName }) !== null;
+  }
+
   public removeDevice(id: string): boolean {
     const prevLen = this.devices.length;
     this.devices = this.devices.filter(d => d.id !== id);

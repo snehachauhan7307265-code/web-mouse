@@ -247,71 +247,64 @@ export function QRCodePairing({
             {/* TAB 1: Helper Setup (Primary when disconnected) */}
             {activeTab === 'helper' && (
               <div className="w-full flex flex-col space-y-3 animate-in fade-in duration-150">
-                {/* Notice: Requirement 14 */}
+                {/* Friendly Setup Notice */}
                 <div 
                   id="card-browser-security-notice"
-                  className="w-full p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 text-left space-y-2.5"
+                  className="w-full p-4 rounded-2xl bg-zinc-900 border border-zinc-800 text-left space-y-2.5"
                 >
-                  <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
-                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span>WebMouse Helper is not running on this laptop.</span>
+                  <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs">
+                    <Laptop className="w-4 h-4 text-indigo-400 shrink-0" />
+                    <span>WebMouse Helper not detected</span>
                   </div>
-                  <p className="text-[11px] text-zinc-300 leading-relaxed">
-                    To connect your phone, the Windows Helper service must be active on this laptop to detect your Wi-Fi LAN IP and accept mouse controls.
+                  <p className="text-[11px] text-zinc-400 leading-relaxed">
+                    Install the WebMouse Windows Helper once. It starts automatically with Windows, runs in your system tray, and enables zero-setup Wi-Fi connection.
                   </p>
                   
-                  {/* Step 1: Download helper */}
+                  {/* Step 1: Download installer */}
                   <div className="pt-1 space-y-2">
                     <a
-                      id="btn-download-zip-package"
-                      href="/WebMouse-Windows.zip"
-                      download="WebMouse-Windows.zip"
-                      className="w-full py-3 px-3 bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-lg"
+                      id="btn-install-helper-qr"
+                      href="/WebMouseHelperSetup.bat"
+                      download="WebMouseHelperSetup.bat"
+                      className="w-full py-3 px-3 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-600/25"
                     >
-                      <Download className="w-4 h-4 text-emerald-100" />
-                      <span>📦 Download WebMouse (ZIP - Recommended)</span>
+                      <Download className="w-4 h-4 text-indigo-100" />
+                      <span>Install WebMouse Helper</span>
                     </a>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <a
-                        id="btn-download-run-bat"
-                        href="/run_webmouse.bat"
-                        download="run_webmouse.bat"
-                        className="py-2 px-2 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md text-center"
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={onRefresh}
+                        className="flex-1 py-2 px-2 bg-zinc-800 hover:bg-zinc-700 active:scale-98 text-zinc-200 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 border border-zinc-700 transition-all text-center"
                       >
-                        <Download className="w-3.5 h-3.5 text-indigo-200" />
-                        <span>run_webmouse.bat</span>
-                      </a>
-                      
+                        <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Detect Helper</span>
+                      </button>
                       <a
-                        id="btn-download-python-script"
-                        href="/webmouse_server.py"
-                        download="webmouse_server.py"
-                        className="py-2 px-2 bg-zinc-800 hover:bg-zinc-700 active:scale-98 text-zinc-200 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 border border-zinc-700 transition-all text-center"
+                        id="btn-download-zip-package"
+                        href="/WebMouse-Windows.zip"
+                        download="WebMouse-Windows.zip"
+                        className="py-2 px-2 bg-zinc-800 hover:bg-zinc-700 active:scale-98 text-zinc-400 hover:text-zinc-200 rounded-xl text-[11px] font-medium flex items-center justify-center gap-1.5 border border-zinc-700 transition-all text-center"
                       >
-                        <Download className="w-3.5 h-3.5 text-amber-400" />
-                        <span>webmouse_server.py</span>
+                        <span>Portable ZIP</span>
                       </a>
                     </div>
                   </div>
-
                   {/* Step 2: Open local interface (Laptop only) */}
-                  <div className="pt-2 border-t border-amber-500/20 space-y-1.5">
-                    <p className="text-[11px] text-zinc-300 font-medium">
+                  <div className="pt-2 border-t border-zinc-800 space-y-1.5">
+                    <p className="text-[11px] text-zinc-400 font-medium">
                       Once helper is running on your laptop:
                     </p>
                     <button
                       id="btn-open-local-webmouse"
                       type="button"
                       onClick={handleOpenLocalWebMouse}
-                      className="w-full py-2.5 px-3 bg-zinc-900 hover:bg-zinc-800 active:scale-98 text-amber-300 font-mono text-xs rounded-xl flex items-center justify-center gap-2 border border-zinc-700 transition-all"
+                      className="w-full py-2.5 px-3 bg-zinc-950 hover:bg-zinc-800 active:scale-98 text-indigo-300 font-mono text-xs rounded-xl flex items-center justify-center gap-2 border border-zinc-800 transition-all"
                     >
-                      <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                      <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
                       <span>{copySuccess ? 'Copied! Open in New Tab' : 'Open http://localhost:8765/'}</span>
                     </button>
-                    <p className="text-[10px] text-amber-300/80 italic text-center">
-                      (Laptop Only: Do not use localhost on your phone)
-                    </p>
                   </div>
                 </div>
 
@@ -390,7 +383,7 @@ export function QRCodePairing({
                     <input
                       id="input-qr-laptop-ip"
                       type="text"
-                      value={manualIp}
+                      value={manualIp ?? ''}
                       onChange={(e) => setManualIp(e.target.value)}
                       placeholder="e.g. 192.168.1.5"
                       className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
@@ -412,7 +405,7 @@ export function QRCodePairing({
                       <input
                         id="input-qr-laptop-code"
                         type="text"
-                        value={manualCode}
+                        value={manualCode ?? ''}
                         onChange={(e) => setManualCode(e.target.value)}
                         placeholder="e.g. 1234"
                         className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-2 py-1.5 text-xs text-center text-amber-300 font-mono focus:outline-none focus:border-emerald-500"

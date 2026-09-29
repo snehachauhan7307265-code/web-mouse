@@ -187,13 +187,42 @@ export type OutgoingMessage =
   | { type: 'share_link'; url: string }
   | { type: 'share_text'; text: string }
   | { type: 'get_clipboard' }
-  | { type: 'file_transfer_start'; filename: string; size: number; transfer_id: string; total_chunks: number }
-  | { type: 'file_chunk'; transfer_id: string; chunk_index: number; chunk: string }
-  | { type: 'file_transfer_end'; transfer_id: string }
-  | { type: 'incoming_file_accept'; transfer_id: string }
-  | { type: 'incoming_file_reject'; transfer_id: string }
-  | { type: 'file_chunk_ack'; transfer_id: string; chunk_index: number }
-  | { type: 'file_transfer_cancel'; transfer_id: string }
+  | { 
+      type: 'file_transfer_start'; 
+      filename: string; 
+      size: number; 
+      transfer_id: string; 
+      total_chunks: number;
+      transferId?: string;
+      fileName?: string;
+      fileSize?: number;
+      mimeType?: string;
+      sourceDevice?: string;
+      targetDevice?: string;
+      totalChunks?: number;
+      checksum?: string;
+    }
+  | { 
+      type: 'file_chunk'; 
+      transfer_id: string; 
+      chunk_index: number; 
+      chunk: string;
+      transferId?: string;
+      sequence?: number;
+      totalChunks?: number;
+      total_chunks?: number;
+      data?: string;
+    }
+  | { 
+      type: 'file_transfer_end'; 
+      transfer_id: string;
+      transferId?: string;
+      checksum?: string;
+    }
+  | { type: 'incoming_file_accept'; transfer_id: string; transferId?: string }
+  | { type: 'incoming_file_reject'; transfer_id: string; transferId?: string; reason?: string }
+  | { type: 'file_chunk_ack'; transfer_id: string; chunk_index: number; transferId?: string; sequence?: number; bytesReceived?: number }
+  | { type: 'file_transfer_cancel'; transfer_id: string; transferId?: string; reason?: string }
   | { type: 'webrtc_signaling'; signalType: 'offer' | 'answer' | 'ice_candidate' | 'stop'; payload?: any }
   | { type: 'webrtc_offer'; sessionId: string; fromDevice: string; toDevice: string; sdp: string }
   | { type: 'webrtc_answer'; sessionId: string; fromDevice: string; toDevice: string; sdp: string }
@@ -248,15 +277,49 @@ export type IncomingMessage =
   | { type: 'notification'; message: string }
   | { type: 'clipboard_data'; text: string }
   | { type: 'screenshot_result'; success: boolean; image?: string; filename?: string; message?: string; timestamp?: number }
-  | { type: 'file_transfer_accepted'; transfer_id: string }
-  | { type: 'file_transfer_rejected'; transfer_id: string; reason: string }
-  | { type: 'file_chunk_ack'; transfer_id: string; chunk_index: number }
-  | { type: 'file_transfer_success'; transfer_id: string }
-  | { type: 'file_transfer_error'; transfer_id: string; message: string }
-  | { type: 'file_transfer_cancel'; transfer_id: string }
-  | { type: 'incoming_file_request'; transfer_id: string; filename: string; size: number; total_chunks: number }
-  | { type: 'file_chunk'; transfer_id: string; chunk_index: number; chunk: string }
-  | { type: 'file_transfer_end'; transfer_id: string }
+  | { type: 'file_transfer_accepted' | 'file_transfer_accept'; transfer_id?: string; transferId?: string }
+  | { type: 'file_transfer_rejected' | 'file_transfer_reject'; transfer_id?: string; transferId?: string; reason?: string }
+  | { type: 'file_chunk_ack'; transfer_id?: string; transferId?: string; chunk_index?: number; sequence?: number; bytesReceived?: number }
+  | { 
+      type: 'file_transfer_success' | 'file_transfer_complete'; 
+      transfer_id?: string; 
+      transferId?: string;
+      fileName?: string;
+      filename?: string;
+      fileSize?: number;
+      size?: number;
+      savedPath?: string;
+      checksumMatched?: boolean;
+      message?: string;
+    }
+  | { type: 'file_transfer_error'; transfer_id?: string; transferId?: string; message?: string; reason?: string }
+  | { type: 'file_transfer_cancel'; transfer_id?: string; transferId?: string; reason?: string }
+  | { 
+      type: 'incoming_file_request'; 
+      transfer_id?: string; 
+      transferId?: string;
+      filename?: string; 
+      fileName?: string;
+      size?: number; 
+      fileSize?: number;
+      mimeType?: string;
+      sourceDevice?: string;
+      total_chunks?: number;
+      totalChunks?: number;
+      checksum?: string;
+    }
+  | { 
+      type: 'file_chunk'; 
+      transfer_id?: string; 
+      transferId?: string;
+      chunk_index?: number; 
+      sequence?: number;
+      chunk?: string; 
+      data?: string;
+      totalChunks?: number;
+      total_chunks?: number;
+    }
+  | { type: 'file_transfer_end'; transfer_id?: string; transferId?: string; checksum?: string }
   | { type: 'webrtc_signaling'; signalType: 'offer' | 'answer' | 'ice_candidate' | 'stop'; payload?: any }
   | { type: 'webrtc_offer'; sessionId: string; fromDevice: string; toDevice: string; sdp: string }
   | { type: 'webrtc_answer'; sessionId: string; fromDevice: string; toDevice: string; sdp: string }
