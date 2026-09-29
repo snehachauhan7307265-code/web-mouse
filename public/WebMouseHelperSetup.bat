@@ -69,7 +69,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObj
 echo [*] Verifying local network firewall permissions for port 8765...
 netsh advfirewall firewall show rule name="WebMouse Helper" >nul 2>&1
 if %errorlevel% neq 0 (
-    netsh advfirewall firewall add rule name="WebMouse Helper" dir=in action=allow protocol=TCP localport=8765 profile=private,domain >nul 2>&1
+    netsh advfirewall firewall add rule name="WebMouse Helper" dir=in action=allow protocol=TCP localport=8765 profile=any >nul 2>&1
 )
 
 :: 5. Launch Helper in Background Immediately

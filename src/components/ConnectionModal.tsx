@@ -340,9 +340,22 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   </div>
 
                   {status === 'error' && (
-                    <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-xs text-amber-300 flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 shrink-0" />
-                      <span>Can&apos;t reach {computerDisplayName}. If IP changed, scan a new QR code.</span>
+                    <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-xs space-y-2.5">
+                      <div className="flex items-center gap-2 text-amber-300 font-bold">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+                        <span>Connect nahi ho raha? Ye 3 cheezein check karein:</span>
+                      </div>
+                      <div className="space-y-1.5 text-zinc-300 text-[11px] leading-relaxed">
+                        <p>
+                          <strong className="text-white">1. Same Wi-Fi ya Hotspot:</strong> Phone aur Laptop dono ek hi network par hone chahiye. <span className="text-amber-200 font-semibold">💡 Sabse accha tarika:</span> Phone ka <strong>Personal Hotspot</strong> ON karke laptop ko usse connect karein!
+                        </p>
+                        <p>
+                          <strong className="text-white">2. Laptop Helper:</strong> Laptop par WebMouse Helper on hona chahiye (taskbar system tray me 🟢 icon).
+                        </p>
+                        <p>
+                          <strong className="text-white">3. Direct Phone Link:</strong> Phone ke Chrome me seedha ye kholein: <code className="text-emerald-400 bg-black/60 px-1 py-0.5 rounded font-mono">http://{config.host || '192.168.x.x'}:{config.port || 8765}/</code>
+                        </p>
+                      </div>
                     </div>
                   )}
 
