@@ -31,6 +31,7 @@ interface ControlViewProps {
   onUpdateSettings: (newSettings: Partial<AppSettings>) => void;
   onSendMessage: (msg: OutgoingMessage) => void;
   onOpenDeviceSelector: () => void;
+  onOpenConnectionModal?: () => void;
   onOpenScreenshot?: () => void;
   lastIncomingMessage?: any;
 }
@@ -44,6 +45,7 @@ export const ControlView: React.FC<ControlViewProps> = ({
   onUpdateSettings,
   onSendMessage,
   onOpenDeviceSelector,
+  onOpenConnectionModal,
   onOpenScreenshot,
   lastIncomingMessage,
 }) => {
@@ -118,6 +120,23 @@ export const ControlView: React.FC<ControlViewProps> = ({
 
       {/* Main Mode Viewport */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
+        {!isConnected && (
+          <div className="bg-amber-950/70 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between text-xs text-amber-200 z-10 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping shrink-0" />
+              <span>Laptop connect nahi hai (Offline). Touchpad kaam nahi karega.</span>
+            </div>
+            {onOpenConnectionModal && (
+              <button
+                onClick={onOpenConnectionModal}
+                className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-amber-300 font-bold text-[11px] transition-colors flex items-center gap-1"
+              >
+                <span>⚡ Connect PC</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {mode === 'mouse' && (
           <Touchpad
             onSendMessage={onSendMessage}

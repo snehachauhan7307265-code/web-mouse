@@ -28,6 +28,8 @@ interface HomeViewProps {
   onNavigate: (tab: 'home' | 'control' | 'share' | 'ai' | 'devices', controlMode?: 'mouse' | 'keyboard' | 'media' | 'presentation' | 'tv_remote' | 'projector' | 'custom') => void;
   onOpenDeviceSelector: () => void;
   onOpenAddDevice: () => void;
+  onOpenConnectionModal?: () => void;
+  onConnect?: () => void;
   onTriggerVoice: () => void;
 }
 
@@ -39,6 +41,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onNavigate,
   onOpenDeviceSelector,
   onOpenAddDevice,
+  onOpenConnectionModal,
+  onConnect,
   onTriggerVoice,
 }) => {
   const isConnected = status === 'connected';
@@ -104,22 +108,49 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
         </div>
 
-        {/* Action Buttons: [ Control ] [ Change Device ] */}
+        {/* Action Buttons */}
         <div className="flex items-center gap-3 pt-2 border-t border-zinc-800/80">
-          <button
-            onClick={() => onNavigate('control', deviceType === 'android_tv' ? 'tv_remote' : 'mouse')}
-            className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-2"
-          >
-            <span>Control</span>
-            <ChevronRight className="w-4 h-4" />
-          </button>
+          {isConnected ? (
+            <>
+              <button
+                onClick={() => onNavigate('control', deviceType === 'android_tv' ? 'tv_remote' : 'mouse')}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-2"
+              >
+                <span>Control</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
 
-          <button
-            onClick={onOpenDeviceSelector}
-            className="flex-1 py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-750 active:scale-[0.98] text-zinc-200 border border-zinc-700/80 text-xs font-semibold transition-all flex items-center justify-center gap-2"
-          >
-            <span>Change Device</span>
-          </button>
+              <button
+                onClick={onOpenDeviceSelector}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-750 active:scale-[0.98] text-zinc-200 border border-zinc-700/80 text-xs font-semibold transition-all flex items-center justify-center gap-2"
+              >
+                <span>Change Device</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                id="btn-home-connect-device"
+                onClick={() => {
+                  if (onConnect) onConnect();
+                  else if (onOpenConnectionModal) onOpenConnectionModal();
+                }}
+                className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-[0.98] text-white text-xs font-bold shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2"
+              >
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                <span>⚡ Connect to Laptop / PC</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={onOpenConnectionModal}
+                className="py-3 px-3.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] text-zinc-200 border border-zinc-700 text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
+                title="Open Setup & QR Pairing"
+              >
+                <span>Setup / QR</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -130,11 +161,35 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <button
-            onClick={() => onNavigate('control', 'mouse')}
-            className="p-4 rounded-xl bg-zinc-900/80 hover:bg-zinc-850 active:bg-zinc-950 border border-zinc-800 transition-all active:scale-[0.98] text-left group flex flex-col justify-between h-28"
+            id="quick-action-mouse"
+            onClick={() => {
+              if (!isConnected && onOpenConnectionModal) {
+                onOpenConnectionModal();
+              } else {
+                onNavigate('control', 'mouse');
+              }
+            }}
+            className={`p-4 rounded-xl bg-zinc-900/80 hover:bg-zinc-850 active:bg-zinc-950 border transition-all active:scale-[0.98] text-left group flex flex-col justify-between h-28 relative overflow-hidden ${
+              isConnected ? 'border-emerald-500/40 shadow-sm shadow-emerald-500/10' : 'border-zinc-800 hover:border-indigo-500/40'
+            }`}
           >
-            <div className="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-400 w-fit group-hover:bg-indigo-500/20">
-              <MousePointer className="w-5 h-5" />
+            <div className="flex items-center justify-between w-full">
+              <div className="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-400 w-fit group-hover:bg-indigo-500/20">
+                <MousePointer className="w-5 h-5" />
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold">
+                {isConnected ? (
+                  <span className="inline-flex items-center gap-1 text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>🟢 Active</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    <span>Connect</span>
+                  </span>
+                )}
+              </div>
             </div>
             <div>
               <span className="text-xs font-semibold text-zinc-200 block">Mouse</span>

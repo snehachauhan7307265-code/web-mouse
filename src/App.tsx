@@ -421,6 +421,45 @@ export default function App() {
     // Auto-connect if pairing token exists and autoReconnect enabled
     if (config.autoReconnect && (config.token || config.code)) {
       client.connect(true);
+    } else {
+      // Proactively probe local helper on localhost / 127.0.0.1
+      const autoProbeLocalHelper = async () => {
+        const endpoints = [
+          'http://127.0.0.1:8765/health',
+          'http://localhost:8765/health',
+          'http://127.0.0.1:8765/api/pairing-info',
+        ];
+        for (const ep of endpoints) {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 1200);
+            const res = await fetch(ep, { signal: controller.signal, mode: 'cors' });
+            clearTimeout(timer);
+            if (res.ok) {
+              const data = await res.json();
+              const lanIp = (data.lanIp || data.host || data.ip || '127.0.0.1').trim();
+              const portNum = parseInt(data.port, 10) || 8765;
+              const tokenVal = data.pairingToken || data.token;
+              const codeVal = data.code || data.pairingCode || '';
+              const devName = data.deviceName || 'My Laptop';
+
+              const newConfig: ConnectionConfig = {
+                host: lanIp,
+                port: portNum,
+                code: codeVal,
+                token: tokenVal,
+                lastComputerName: devName,
+                autoReconnect: true,
+              };
+              updateConfig(newConfig);
+              client.updateConfig(newConfig, settings.deviceName);
+              client.connect(false);
+              return;
+            }
+          } catch (e) {}
+        }
+      };
+      autoProbeLocalHelper();
     }
 
     return () => {
@@ -545,6 +584,14 @@ export default function App() {
           onNavigate={(area, mode) => handleNavigate(area, mode)}
           onOpenDeviceSelector={() => setIsProfilesModalOpen(true)}
           onOpenAddDevice={() => openConnectionModal('scanner')}
+          onOpenConnectionModal={() => openConnectionModal('normal')}
+          onConnect={() => {
+            if (config.host) {
+              handleConnect(config);
+            } else {
+              openConnectionModal('normal');
+            }
+          }}
           onTriggerVoice={handleTriggerVoice}
         />
       )}
@@ -559,6 +606,7 @@ export default function App() {
           onUpdateSettings={updateSettings}
           onSendMessage={handleSendMessage}
           onOpenDeviceSelector={() => setIsProfilesModalOpen(true)}
+          onOpenConnectionModal={() => openConnectionModal('normal')}
           onOpenScreenshot={handleTakeScreenshot}
           lastIncomingMessage={lastIncomingMessage}
         />
