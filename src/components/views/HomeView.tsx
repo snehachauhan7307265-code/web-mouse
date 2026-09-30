@@ -128,28 +128,37 @@ export const HomeView: React.FC<HomeViewProps> = ({
               </button>
             </>
           ) : (
-            <>
+            <div className="flex flex-col sm:flex-row w-full gap-2.5">
               <button
                 id="btn-home-connect-device"
                 onClick={() => {
-                  if (onConnect) onConnect();
-                  else if (onOpenConnectionModal) onOpenConnectionModal();
+                  if (onOpenConnectionModal) onOpenConnectionModal();
+                  else if (onConnect) onConnect();
                 }}
                 className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-[0.98] text-white text-xs font-bold shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2"
               >
                 <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                <span>⚡ Connect to Laptop / PC</span>
+                <span>💻 Connect to PC / Laptop</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
 
               <button
-                onClick={onOpenConnectionModal}
-                className="py-3 px-3.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] text-zinc-200 border border-zinc-700 text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
-                title="Open Setup & QR Pairing"
+                id="btn-home-scan-qr"
+                onClick={onOpenAddDevice}
+                className="py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-1.5"
+                title="Scan QR Code with Camera"
               >
-                <span>Setup / QR</span>
+                <span>📷 Scan QR</span>
               </button>
-            </>
+
+              <button
+                onClick={onOpenConnectionModal}
+                className="py-3 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 border border-zinc-700 text-xs font-semibold transition-all flex items-center justify-center gap-1"
+                title="Open Setup & Helper"
+              >
+                <span>Setup</span>
+              </button>
+            </div>
           )}
         </div>
       </div>

@@ -384,10 +384,62 @@ class PurePythonWebSocketServer:
             writer.write(resp.encode() + body)
             await writer.drain()
         else:
-            body = b"WebMouse V1 Helper Server Active"
+            current_lan_ip = get_local_ip()
+            body = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>WebMouse Controller</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ background: #09090b; color: #fff; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }}
+    header {{ padding: 12px 16px; background: #18181b; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #27272a; }}
+    .badge {{ font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #064e3b; color: #34d399; font-weight: bold; }}
+    #pad {{ flex: 1; margin: 12px; background: #141418; border: 2px dashed #27272a; border-radius: 20px; display: flex; align-items: center; justify-content: center; touch-action: none; }}
+    #pad:active {{ border-color: #6366f1; background: #1c1c24; }}
+    .row {{ display: flex; gap: 8px; padding: 0 12px 10px; }}
+    button {{ flex: 1; padding: 14px; background: #27272a; border: 1px solid #3f3f46; color: #fff; border-radius: 12px; font-weight: bold; font-size: 14px; }}
+    button:active {{ background: #6366f1; }}
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong>🖱️ WebMouse</strong> <span style="font-size:11px;color:#a1a1aa;">{current_lan_ip}:{self.server.port}</span></div>
+    <div id="st" class="badge">Connected 🟢</div>
+  </header>
+  <div id="pad">
+    <div style="color:#71717a;font-size:13px;text-align:center;">👆 Touch to Move Mouse<br><span style="font-size:11px;color:#52525b;">Tap: Click</span></div>
+  </div>
+  <div class="row">
+    <button id="l">Left Click</button>
+    <button id="r">Right Click</button>
+  </div>
+  <script>
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+    const pin = new URLSearchParams(location.search).get('pair') || '{self.server.pairing_code}';
+    ws.onopen = () => ws.send(JSON.stringify({{ type: 'auth', code: pin, token: pin, deviceName: 'Mobile WebMouse' }}));
+    function send(o) {{ if (ws.readyState === 1) ws.send(JSON.stringify(o)); }}
+    let lx = 0, ly = 0, tm = 0, moved = false;
+    const p = document.getElementById('pad');
+    p.ontouchstart = (e) => {{ if (e.touches.length === 1) {{ lx = e.touches[0].clientX; ly = e.touches[0].clientY; tm = Date.now(); moved = false; }} }};
+    p.ontouchmove = (e) => {{
+      e.preventDefault();
+      if (e.touches.length === 1) {{
+        const dx = (e.touches[0].clientX - lx) * 1.5, dy = (e.touches[0].clientY - ly) * 1.5;
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {{ moved = true; send({{ type: 'mouse_move', dx: Math.round(dx), dy: Math.round(dy) }}); }}
+        lx = e.touches[0].clientX; ly = e.touches[0].clientY;
+      }}
+    }};
+    p.ontouchend = () => {{ if (!moved && Date.now() - tm < 250) send({{ type: 'mouse_click', button: 'left' }}); }};
+    document.getElementById('l').onclick = () => send({{ type: 'mouse_click', button: 'left' }});
+    document.getElementById('r').onclick = () => send({{ type: 'mouse_click', button: 'right' }});
+  </script>
+</body>
+</html>""".encode("utf-8")
             resp = (
                 "HTTP/1.1 200 OK\r\n"
-                "Content-Type: text/plain; charset=utf-8\r\n"
+                "Content-Type: text/html; charset=utf-8\r\n"
                 f"Content-Length: {len(body)}\r\n"
                 "Access-Control-Allow-Origin: *\r\n"
                 "Access-Control-Allow-Private-Network: true\r\n"
@@ -1513,30 +1565,224 @@ class WebMouseServer:
                         with open(index_file, "rb") as f:
                             return send_http(200, "text/html", f.read())
 
-            # 5. Status or root landing fallback (if dist not built): GET / or /health
-            if req_path in ("/", "/status", "/health"):
+            # 5. Interactive Standalone Mobile Remote fallback (if dist not built): GET / or /health
+            if req_path in ("/", "/status", "/health", "/control", "/mouse"):
                 current_lan_ip = get_local_ip()
                 html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebMouse Gateway</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>WebMouse Mobile Controller</title>
   <style>
-    body {{ background: #09090b; color: #fafafa; font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; text-align: center; }}
-    .card {{ background: #18181b; border: 1px solid #27272a; border-radius: 24px; padding: 32px; max-width: 380px; }}
-    h1 {{ font-size: 22px; margin-bottom: 8px; }}
-    p {{ color: #a1a1aa; font-size: 14px; margin-bottom: 16px; }}
-    .status {{ color: #34d399; font-weight: bold; font-size: 14px; }}
+    * {{ box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }}
+    body {{ background: #09090b; color: #fafafa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; touch-action: none; }}
+    header {{ padding: 12px 16px; background: #18181b; border-bottom: 1px solid #27272a; display: flex; align-items: center; justify-content: space-between; }}
+    .title {{ font-size: 15px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }}
+    .status-badge {{ font-size: 11px; padding: 4px 10px; border-radius: 999px; background: #064e3b; color: #34d399; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }}
+    .dot {{ width: 8px; height: 8px; border-radius: 50%; background: #34d399; }}
+    .offline {{ background: #4c0519; color: #fb7185; }}
+    .offline .dot {{ background: #fb7185; }}
+    
+    #trackpad {{ flex: 1; margin: 12px; background: #121215; border: 2px dashed #27272a; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; user-select: none; touch-action: none; }}
+    #trackpad:active {{ border-color: #6366f1; background: #181822; }}
+    .trackpad-hint {{ font-size: 13px; color: #71717a; pointer-events: none; text-align: center; }}
+    .trackpad-hint span {{ display: block; font-size: 11px; color: #52525b; margin-top: 4px; }}
+    
+    .btn-row {{ display: flex; gap: 8px; padding: 0 12px 8px; }}
+    button {{ flex: 1; padding: 14px; background: #27272a; border: 1px solid #3f3f46; color: #fafafa; border-radius: 14px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.1s; user-select: none; }}
+    button:active {{ background: #6366f1; border-color: #818cf8; }}
+    .btn-primary {{ background: #4f46e5; border-color: #6366f1; }}
+    .btn-primary:active {{ background: #4338ca; }}
+    
+    .quick-bar {{ display: flex; gap: 6px; padding: 0 12px 10px; overflow-x: auto; }}
+    .quick-bar button {{ flex: none; padding: 8px 12px; font-size: 12px; border-radius: 10px; }}
+    
+    .input-row {{ display: flex; gap: 8px; padding: 0 12px 12px; }}
+    .input-row input {{ flex: 1; padding: 10px 14px; background: #18181b; border: 1px solid #3f3f46; border-radius: 12px; color: #fff; font-size: 13px; outline: none; }}
+    .input-row button {{ flex: none; padding: 10px 16px; }}
   </style>
 </head>
 <body>
-  <div class="card">
-    <div style="font-size: 40px; margin-bottom: 10px;">🖱️</div>
-    <h1>WebMouse V1</h1>
-    <p>Windows Helper Server is running.</p>
-    <div class="status">🟢 Ready on {current_lan_ip}:{self.port}</div>
+  <header>
+    <div class="title">
+      <span>🖱️ WebMouse</span>
+      <span style="font-size:11px;color:#a1a1aa;font-weight:normal;">{current_lan_ip}:{self.port}</span>
+    </div>
+    <div id="status" class="status-badge offline">
+      <span class="dot"></span>
+      <span id="status-text">Connecting...</span>
+    </div>
+  </header>
+
+  <div id="trackpad">
+    <div class="trackpad-hint">
+      👆 Touch & Drag to Move Mouse
+      <span>Tap: Left Click • Two Fingers: Right Click</span>
+    </div>
   </div>
+
+  <div class="btn-row">
+    <button id="btn-left">Left Click</button>
+    <button id="btn-scroll-up" style="flex:0.6;">▲</button>
+    <button id="btn-scroll-down" style="flex:0.6;">▼</button>
+    <button id="btn-right">Right Click</button>
+  </div>
+
+  <div class="input-row">
+    <input type="text" id="type-input" placeholder="Type text to send to PC...">
+    <button id="btn-send-text" class="btn-primary">Send</button>
+  </div>
+
+  <div class="quick-bar">
+    <button onclick="sendKey('enter')">Enter ⏎</button>
+    <button onclick="sendKey('backspace')">⌫ Back</button>
+    <button onclick="sendKey('space')">Space</button>
+    <button onclick="sendKey('esc')">Esc</button>
+    <button onclick="sendKey('pagedown')">Next Slide ❯</button>
+    <button onclick="sendKey('pageup')">❮ Prev</button>
+    <button onclick="sendKey('volumeup')">Vol +</button>
+    <button onclick="sendKey('volumedown')">Vol -</button>
+    <button onclick="sendKey('playpause')">⏯ Play</button>
+  </div>
+
+  <script>
+    const pin = new URLSearchParams(window.location.search).get('pair') || '{self.pairing_code}';
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = window.location.host || '{current_lan_ip}:{self.port}';
+    let ws = null;
+    let isConnected = false;
+
+    function connect() {{
+      try {{
+        ws = new WebSocket(`${{wsProto}}//${{wsHost}}`);
+        ws.onopen = () => {{
+          ws.send(JSON.stringify({{
+            type: 'auth',
+            code: pin,
+            token: pin,
+            deviceName: 'Mobile WebMouse'
+          }}));
+        }};
+        ws.onmessage = (e) => {{
+          try {{
+            const data = JSON.parse(e.data);
+            if (data.type === 'auth_result' && data.success) {{
+              isConnected = true;
+              document.getElementById('status').className = 'status-badge';
+              document.getElementById('status-text').innerText = 'Connected 🟢';
+            }}
+          }} catch(err) {{}}
+        }};
+        ws.onclose = () => {{
+          isConnected = false;
+          document.getElementById('status').className = 'status-badge offline';
+          document.getElementById('status-text').innerText = 'Reconnecting...';
+          setTimeout(connect, 2000);
+        }};
+        ws.onerror = () => {{
+          document.getElementById('status').className = 'status-badge offline';
+          document.getElementById('status-text').innerText = 'Offline';
+        }};
+      }} catch(e) {{
+        setTimeout(connect, 3000);
+      }}
+    }}
+    connect();
+
+    function send(obj) {{
+      if (ws && ws.readyState === WebSocket.OPEN) {{
+        ws.send(JSON.stringify(obj));
+      }}
+    }}
+
+    function sendKey(key) {{
+      send({{ type: 'keyboard_key', key: key }});
+    }}
+
+    // Trackpad multi-touch gestures
+    const pad = document.getElementById('trackpad');
+    let lastX = 0, lastY = 0;
+    let touchStartTime = 0;
+    let touchStartDist = 0;
+    let didMove = false;
+
+    pad.addEventListener('touchstart', (e) => {{
+      if (e.touches.length === 1) {{
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+        touchStartTime = Date.now();
+        didMove = false;
+      }} else if (e.touches.length === 2) {{
+        lastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      }}
+    }}, {{ passive: false }});
+
+    pad.addEventListener('touchmove', (e) => {{
+      e.preventDefault();
+      if (e.touches.length === 1) {{
+        const x = e.touches[0].clientX;
+        const y = e.touches[0].clientY;
+        const dx = (x - lastX) * 1.5;
+        const dy = (y - lastY) * 1.5;
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {{
+          didMove = true;
+          send({{ type: 'mouse_move', dx: Math.round(dx), dy: Math.round(dy) }});
+        }}
+        lastX = x;
+        lastY = y;
+      }} else if (e.touches.length === 2) {{
+        const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const dy = currentY - lastY;
+        if (Math.abs(dy) > 2) {{
+          send({{ type: 'mouse_scroll', dy: dy > 0 ? 30 : -30 }});
+        }}
+        lastY = currentY;
+      }}
+    }}, {{ passive: false }});
+
+    pad.addEventListener('touchend', (e) => {{
+      const elapsed = Date.now() - touchStartTime;
+      if (!didMove && elapsed < 250) {{
+        if (e.changedTouches.length === 1) {{
+          send({{ type: 'mouse_click', button: 'left' }});
+        }}
+      }}
+    }}, {{ passive: false }});
+
+    // Buttons
+    document.getElementById('btn-left').addEventListener('click', () => {{
+      send({{ type: 'mouse_click', button: 'left' }});
+    }});
+    document.getElementById('btn-right').addEventListener('click', () => {{
+      send({{ type: 'mouse_click', button: 'right' }});
+    }});
+    document.getElementById('btn-scroll-up').addEventListener('click', () => {{
+      send({{ type: 'mouse_scroll', dy: 60 }});
+    }});
+    document.getElementById('btn-scroll-down').addEventListener('click', () => {{
+      send({{ type: 'mouse_scroll', dy: -60 }});
+    }});
+
+    // Typing
+    const input = document.getElementById('type-input');
+    document.getElementById('btn-send-text').addEventListener('click', () => {{
+      const val = input.value;
+      if (val) {{
+        send({{ type: 'keyboard_text', text: val }});
+        input.value = '';
+      }}
+    }});
+    input.addEventListener('keydown', (e) => {{
+      if (e.key === 'Enter') {{
+        const val = input.value;
+        if (val) {{
+          send({{ type: 'keyboard_text', text: val }});
+          input.value = '';
+        }}
+      }}
+    }});
+  </script>
 </body>
 </html>"""
                 return send_http(200, "text/html", html)

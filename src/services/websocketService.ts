@@ -138,6 +138,7 @@ export class WebSocketClient {
       }
     }
 
+    const clean = rawHost.replace(/^(ws:\/\/|wss:\/\/|http:\/\/|https:\/\/)/, '').replace(/\/+$/, '');
     let wsUrl = '';
     if (rawHost.startsWith('ws://') || rawHost.startsWith('wss://')) {
       wsUrl = rawHost;
@@ -146,7 +147,6 @@ export class WebSocketClient {
     } else if (rawHost.startsWith('https://')) {
       wsUrl = `wss://${rawHost.slice(8)}`;
     } else {
-      const clean = rawHost.replace(/\/+$/, '');
       const hasPort = clean.includes(':') && !clean.includes('::');
       wsUrl = hasPort ? `ws://${clean}` : `ws://${clean}:${defaultPort}`;
     }
