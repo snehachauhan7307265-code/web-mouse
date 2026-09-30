@@ -20,6 +20,7 @@ export class WebSocketClient {
   private isIntentionalDisconnect = false;
   private lastPingSent = 0;
   private reconnectAttempts = 0;
+  private onErrorDetails?: (error: { stage: 'network' | 'auth' | 'timeout' | 'mixed_content'; message: string; host: string; port: number }) => void;
 
   constructor(
     config: ConnectionConfig,
@@ -33,6 +34,7 @@ export class WebSocketClient {
       onClipboardData?: (text: string) => void;
       onIncomingMessage?: (msg: any) => void;
       onAuthSuccess?: (token: string) => void;
+      onErrorDetails?: (error: { stage: 'network' | 'auth' | 'timeout' | 'mixed_content'; message: string; host: string; port: number }) => void;
     }
   ) {
     this.config = config;
@@ -45,6 +47,7 @@ export class WebSocketClient {
     this.onClipboardData = callbacks.onClipboardData;
     this.onIncomingMessage = callbacks.onIncomingMessage;
     this.onAuthSuccess = callbacks.onAuthSuccess;
+    this.onErrorDetails = callbacks.onErrorDetails;
   }
 
   public updateConfig(config: ConnectionConfig, deviceName: string) {
@@ -156,10 +159,31 @@ export class WebSocketClient {
       this.addLog('sys', 'Note: Loaded over HTTPS. If connecting to local ws:// fails, check browser Mixed Content settings.');
     }
 
+    let isConnectedOrClosed = false;
+    const connectTimeout = setTimeout(() => {
+      if (!isConnectedOrClosed && this.status === 'connecting') {
+        isConnectedOrClosed = true;
+        this.setStatus('error');
+        const reason = `Connection timeout: ${clean}:${defaultPort} did not respond within 5 seconds. Windows Firewall may be blocking port ${defaultPort}, or devices are on different networks.`;
+        this.addLog('err', reason);
+        if (this.onErrorDetails) {
+          this.onErrorDetails({
+            stage: 'timeout',
+            message: reason,
+            host: clean,
+            port: defaultPort,
+          });
+        }
+        try { this.socket?.close(); } catch (e) {}
+      }
+    }, 5000);
+
     try {
       this.socket = new WebSocket(wsUrl);
 
       this.socket.onopen = () => {
+        isConnectedOrClosed = true;
+        clearTimeout(connectTimeout);
         this.addLog('sys', `Connected to ${wsUrl}. Sending authentication handshake...`);
         const codeToSend = (this.config.code?.trim() || (this.config.qrToken && this.config.qrToken.length <= 8 ? this.config.qrToken : '') || '').trim();
         const tokenToSend = this.config.qrToken || this.config.token || codeToSend;
@@ -190,14 +214,24 @@ export class WebSocketClient {
       };
 
       this.socket.onerror = (_err) => {
-        const errReason = `Phone cannot reach Windows Helper at ${wsUrl}. Ensure both devices are on the same Wi-Fi.`;
-        console.warn('[WebMouse] connection failure reason:', errReason);
+        isConnectedOrClosed = true;
+        clearTimeout(connectTimeout);
+        let stage: 'mixed_content' | 'network' = 'network';
         let errHint = `Phone cannot reach Windows Helper at ${wsUrl}. Check that both devices are on the same Wi-Fi and that Windows Firewall allows WebMouse on the local network.`;
         if (isHttpsOrigin && wsUrl.startsWith('ws://')) {
-          errHint += ' (If blocked by browser over HTTPS, allow Insecure Content in site settings or add to Home Screen).';
+          stage = 'mixed_content';
+          errHint = `Browser blocked insecure WebSocket over HTTPS (Mixed Content). Open http://${clean}:${defaultPort}/ directly on your phone.`;
         }
         this.addLog('err', errHint);
         this.setStatus('error');
+        if (this.onErrorDetails) {
+          this.onErrorDetails({
+            stage,
+            message: errHint,
+            host: clean,
+            port: defaultPort,
+          });
+        }
       };
 
       this.socket.onclose = (event) => {
@@ -275,6 +309,14 @@ export class WebSocketClient {
           errorMessage: errorMsg,
         });
         this.addLog('err', `Auth failed: ${errorMsg}`);
+        if (this.onErrorDetails) {
+          this.onErrorDetails({
+            stage: 'auth',
+            message: errorMsg,
+            host: this.config.host,
+            port: this.config.port,
+          });
+        }
         this.disconnect(true);
       }
     } else if (data.type === 'pong') {

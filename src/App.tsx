@@ -350,6 +350,7 @@ export default function App() {
           setStatus(newStatus);
           if (newStatus === 'connected') {
             triggerHaptic('double', settings.vibration);
+            setCurrentArea((prev) => (prev === 'home' ? 'control' : prev));
           }
         },
         onDeviceInfo: (info) => {

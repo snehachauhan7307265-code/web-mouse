@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Wifi, ShieldCheck, Laptop, HelpCircle, ArrowRight, CheckCircle2, 
-  AlertTriangle, RefreshCw, QrCode, Scan, ChevronDown, ChevronUp, 
+  AlertTriangle, AlertCircle, RefreshCw, QrCode, Scan, ChevronDown, ChevronUp, 
   Download, Sparkles, Check, Smartphone, Monitor
 } from 'lucide-react';
 import { ConnectionConfig, ConnectionStatus, ConnectedDeviceInfo } from '../types';
@@ -54,6 +54,13 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   } | null>(null);
 
   const [isDownloading, setIsDownloading] = useState(false);
+  const [connectingTarget, setConnectingTarget] = useState<{
+    host: string;
+    port: number;
+    code?: string;
+    name?: string;
+    pairUrl?: string;
+  } | null>(null);
 
   // Proactive helper detection via HTTP / Health & WebSocket
   const probeLocalHelper = async () => {
@@ -167,6 +174,16 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     }
   }, [isOpen, initialView, config.host, config.port, config.code, config.autoReconnect]);
 
+  useEffect(() => {
+    if (status === 'connected' && connectingTarget) {
+      const timer = setTimeout(() => {
+        setConnectingTarget(null);
+        onClose();
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [status, connectingTarget, onClose]);
+
   if (!isOpen) return null;
 
   const handleConnect = (e?: React.FormEvent) => {
@@ -189,12 +206,21 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
     const scannedCode = (data.code || data.pin || data.pairingCode || (data.token && String(data.token).length <= 8 ? data.token : '') || '').trim();
     const scannedToken = (data.token || data.qrToken || '').trim();
     const scannedName = data.name || data.deviceName || data.computerName || 'My Laptop';
+    const pairUrl = data.pairUrl || (scannedHost ? `http://${scannedHost}:${scannedPort}/?pair=${scannedCode || scannedToken}` : '');
 
     if (scannedHost) setHost(scannedHost);
     if (scannedPort) setPort(scannedPort.toString());
     if (scannedCode) setCode(scannedCode);
 
     if (scannedHost) {
+      setConnectingTarget({
+        host: scannedHost,
+        port: scannedPort,
+        code: scannedCode || scannedToken,
+        name: scannedName,
+        pairUrl,
+      });
+
       onSaveAndConnect({
         host: scannedHost,
         port: scannedPort,
@@ -204,7 +230,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         lastComputerName: scannedName,
         autoReconnect: true,
       });
-      onClose();
+      // Do NOT call onClose() here: keep modal open to show live connection progress & feedback
     }
   };
 
@@ -292,8 +318,126 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
         {/* Modal Scrollable Body */}
         <div className="p-6 space-y-5 overflow-y-auto">
-          {/* SCENARIO A: RETURNING USER WITH SAVED DEVICE */}
-          {hasTrustedDevice && (
+          {/* LIVE CONNECTION PROGRESS VIEW (When QR code is scanned or connect requested) */}
+          {connectingTarget ? (
+            <div className="space-y-5 animate-in fade-in duration-200">
+              <div className="flex flex-col items-center text-center">
+                {status === 'connected' ? (
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center text-emerald-400 mb-3 shadow-lg shadow-emerald-500/30">
+                    <CheckCircle2 className="w-9 h-9" />
+                  </div>
+                ) : status === 'connecting' || status === 'reconnecting' ? (
+                  <div className="w-16 h-16 rounded-full bg-indigo-500/20 border-2 border-indigo-500 flex items-center justify-center text-indigo-400 mb-3 shadow-lg shadow-indigo-500/30">
+                    <RefreshCw className="w-8 h-8 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 rounded-full bg-rose-500/20 border-2 border-rose-500 flex items-center justify-center text-rose-400 mb-3 shadow-lg shadow-rose-500/30">
+                    <AlertCircle className="w-8 h-8" />
+                  </div>
+                )}
+
+                <h3 className="text-lg font-bold text-white">
+                  {status === 'connected' ? 'Connected Successfully!' : status === 'connecting' ? 'Connecting to Laptop...' : 'Connection Failed'}
+                </h3>
+                <p className="text-xs text-zinc-400 font-mono mt-0.5">
+                  {connectingTarget.name || 'My Laptop'} ({connectingTarget.host}:{connectingTarget.port})
+                </p>
+              </div>
+
+              {/* Step-by-Step Connection Pipeline */}
+              <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 text-left space-y-3 text-xs">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-[10px]">✓</span>
+                  <span className="text-zinc-200 font-medium">QR Code Scanned &amp; Validated</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  {status === 'connected' ? (
+                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-[10px]">✓</span>
+                  ) : status === 'connecting' ? (
+                    <RefreshCw className="w-4 h-4 text-indigo-400 animate-spin shrink-0" />
+                  ) : (
+                    <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold text-[10px]">✕</span>
+                  )}
+                  <span className={status === 'connected' ? 'text-zinc-200 font-medium' : status === 'connecting' ? 'text-indigo-300 font-medium' : 'text-rose-300 font-medium'}>
+                    WebSocket Handshake ({connectingTarget.host}:{connectingTarget.port})
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  {status === 'connected' ? (
+                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-[10px]">✓</span>
+                  ) : status === 'connecting' ? (
+                    <span className="w-5 h-5 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[10px]">3</span>
+                  ) : (
+                    <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold text-[10px]">✕</span>
+                  )}
+                  <span className={status === 'connected' ? 'text-emerald-400 font-semibold' : 'text-zinc-400'}>
+                    Device Authentication (PIN: {connectingTarget.code || 'Auto'})
+                  </span>
+                </div>
+              </div>
+
+              {/* If connection error: Provide direct 1-tap solution */}
+              {(status === 'error' || status === 'auth_failed') && (
+                <div className="p-4 bg-amber-950/40 border border-amber-500/40 rounded-2xl text-left space-y-3 text-xs">
+                  <div className="flex items-center gap-2 text-amber-300 font-bold">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Laptop se connect nahi ho paya:</span>
+                  </div>
+
+                  {typeof window !== 'undefined' && window.location.protocol === 'https:' && (
+                    <div className="p-3 bg-zinc-900/90 rounded-xl border border-amber-500/30 space-y-2">
+                      <p className="text-[11px] text-amber-200 leading-snug">
+                        💡 <strong>Browser Security (Mixed Content):</strong> Phone browser HTTPS page se local IP par direct WebSocket ko block kar raha hai.
+                      </p>
+                      <p className="text-[11px] text-zinc-300">
+                        Neeche diye green button par tap karein — ye phone par direct khulega (100% working, bina internet ke bhi):
+                      </p>
+                      <a
+                        href={connectingTarget.pairUrl || `http://${connectingTarget.host}:${connectingTarget.port}/?pair=${connectingTarget.code || ''}`}
+                        className="block w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-center text-xs rounded-xl shadow-md transition-all active:scale-95"
+                      >
+                        🚀 Open Direct Phone Link (http://{connectingTarget.host}:{connectingTarget.port}/)
+                      </a>
+                    </div>
+                  )}
+
+                  <div className="space-y-1 text-zinc-300 text-[11px]">
+                    <p>• <strong>Same Wi-Fi:</strong> Phone aur Laptop dono ek hi Wi-Fi router ya Mobile Hotspot se jude hone chahiye.</p>
+                    <p>• <strong>Helper Status:</strong> Laptop ke CMD me WebMouse Helper running hona chahiye.</p>
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleConnect()}
+                      className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md transition-all"
+                    >
+                      🔄 Retry
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConnectingTarget(null);
+                        setShowScanner(true);
+                      }}
+                      className="flex-1 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold text-xs border border-zinc-700 transition-all"
+                    >
+                      📷 Scan Again
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {status === 'connected' && (
+                <div className="p-3 bg-emerald-950/40 border border-emerald-500/40 rounded-2xl text-emerald-300 text-xs font-semibold animate-pulse text-center">
+                  Mouse trackpad khol rahe hain...
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* SCENARIO A: RETURNING USER WITH SAVED DEVICE */}
+              {hasTrustedDevice && (
             <div className="space-y-4">
               {/* Connected Badge */}
               {isConnected ? (
@@ -600,7 +744,9 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
               </div>
             )}
           </div>
-        </div>
+        </>
+        )}
+      </div>
       </div>
     </div>
   );

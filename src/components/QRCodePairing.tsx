@@ -98,16 +98,23 @@ export function QRCodePairing({
   const effectiveHost = isHostValid ? host.trim() : (manualIp && !isInvalidHost(manualIp) ? manualIp.trim() : '');
   const effectivePort = isHostValid ? port : (port || 8765);
   const effectiveToken = isHostValid ? (token || '') : manualCode.trim();
-  const effectiveExpiresAt = expiresAt || Math.floor(Date.now() / 1000) + 60;
+  const effectiveCode = (token && token.length <= 8 ? token : '') || (manualCode && manualCode.length <= 8 ? manualCode : '');
+  const effectiveExpiresAt = expiresAt || Math.floor(Date.now() / 1000) + 3600;
 
   // Universal QR Payload as required by Requirement 5
   const qrPayloadObj = effectiveHost ? {
+    protocol: "webmouse",
     type: "webmouse_pair",
-    version: 1,
+    version: 2,
+    deviceName: "My Laptop",
     host: effectiveHost,
     port: effectivePort,
+    transport: "ws",
+    code: effectiveCode,
+    pairingCode: effectiveCode,
     token: effectiveToken,
-    expiresAt: effectiveExpiresAt
+    expiresAt: effectiveExpiresAt,
+    pairUrl: `http://${effectiveHost}:${effectivePort}/?pair=${effectiveCode || effectiveToken}`
   } : null;
 
   const qrPayloadString = qrPayloadObj ? JSON.stringify(qrPayloadObj) : '';

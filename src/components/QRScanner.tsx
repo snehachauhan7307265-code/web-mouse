@@ -169,13 +169,16 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
             const parsed = JSON.parse(trimmed);
             if (parsed && typeof parsed === 'object') {
               pairData = {
+                protocol: parsed.protocol || 'webmouse',
                 type: parsed.type || 'webmouse_pair',
-                version: parsed.version || parsed.v || 1,
+                version: parsed.version || parsed.v || 2,
+                deviceName: parsed.deviceName || parsed.name || 'My Laptop',
                 host: (parsed.host || parsed.ip || '').trim(),
                 port: parseInt(parsed.port, 10) || 8765,
                 token: (parsed.token || parsed.qrToken || '').trim() || undefined,
-                code: (parsed.code || (parsed.token && String(parsed.token).length <= 8 ? String(parsed.token) : '') || '').trim() || undefined,
+                code: (parsed.pairingCode || parsed.code || (parsed.token && String(parsed.token).length <= 8 ? String(parsed.token) : '') || '').trim() || undefined,
                 expiresAt: parsed.expiresAt ? parseInt(parsed.expiresAt, 10) : undefined,
+                pairUrl: parsed.pairUrl || parsed.url || `http://${(parsed.host || parsed.ip || '').trim()}:${parseInt(parsed.port, 10) || 8765}/?pair=${parsed.pairingCode || parsed.code || ''}`,
               };
             }
           } catch (jsonErr) {
@@ -192,18 +195,22 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
               const url = new URL(urlStr);
               const tokenParam = url.searchParams.get('token');
               const codeParam = url.searchParams.get('code');
+              const pairParam = url.searchParams.get('pair');
               const typeParam = url.searchParams.get('type');
               const verParam = url.searchParams.get('v');
               const expParam = url.searchParams.get('exp') || url.searchParams.get('expiresAt');
 
               pairData = {
+                protocol: 'webmouse',
                 type: typeParam || 'webmouse_pair',
-                version: verParam ? parseInt(verParam, 10) : 1,
+                version: verParam ? parseInt(verParam, 10) : 2,
+                deviceName: url.searchParams.get('name') || 'My Laptop',
                 host: url.hostname.trim(),
                 port: parseInt(url.port, 10) || 8765,
-                token: (tokenParam || codeParam || '').trim() || undefined,
-                code: (codeParam || (tokenParam && tokenParam.length <= 8 ? tokenParam : '') || '').trim() || undefined,
+                token: (tokenParam || codeParam || pairParam || '').trim() || undefined,
+                code: (codeParam || pairParam || (tokenParam && tokenParam.length <= 8 ? tokenParam : '') || '').trim() || undefined,
                 expiresAt: expParam ? parseInt(expParam, 10) : undefined,
+                pairUrl: urlMatch[1],
               };
             } catch (urlErr) {
               console.warn('[WebMouse] URL QR parse error:', urlErr);
@@ -216,23 +223,25 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
           const ipPortMatch = trimmed.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::(\d{1,5}))?$/);
           if (ipPortMatch) {
             pairData = {
+              protocol: 'webmouse',
               type: 'webmouse_pair',
-              version: 1,
+              version: 2,
               host: ipPortMatch[1].trim(),
               port: ipPortMatch[2] ? parseInt(ipPortMatch[2], 10) : 8765,
               token: undefined,
               code: undefined,
+              pairUrl: `http://${ipPortMatch[1].trim()}:${ipPortMatch[2] ? parseInt(ipPortMatch[2], 10) : 8765}/`,
             };
           }
         }
 
         if (!pairData) {
-          setError('अमान्य QR कोड: WebMouse pairing info नहीं मिला। (Invalid QR code)');
+          setError('❌ Invalid WebMouse QR: WebMouse pairing info not found.');
           return;
         }
 
         if (!pairData.host) {
-          setError('QR कोड में PC का IP एड्रेस नहीं मिला। (Missing IP address)');
+          setError('❌ Invalid WebMouse QR: Missing host IP address.');
           return;
         }
 
@@ -244,10 +253,10 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
           return;
         }
 
-        // Check expiration
-        if (pairData.expiresAt) {
+        // Check expiration only if no pairing PIN code is present
+        if (pairData.expiresAt && !pairData.code) {
           const now = Math.floor(Date.now() / 1000);
-          if (now > pairData.expiresAt + 60) {
+          if (now > pairData.expiresAt + 3600) {
             setError('यह QR कोड एक्सपायर हो चुका है। कृपया PC पर नया QR कोड रिफ्रेश करें।');
             return;
           }
