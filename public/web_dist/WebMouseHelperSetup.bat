@@ -29,6 +29,9 @@ if exist "%~dp0WebMouse.vbs" (
 if exist "%~dp0run_webmouse.bat" (
     copy /y "%~dp0run_webmouse.bat" "%INSTALL_DIR%\run_webmouse.bat" >nul
 )
+if exist "%~dp0web_dist" (
+    xcopy /y /e /i "%~dp0web_dist" "%INSTALL_DIR%\web_dist" >nul
+)
 
 :: If webmouse_server.py wasn't in source dir, download or create it
 if not exist "%INSTALL_DIR%\webmouse_server.py" (

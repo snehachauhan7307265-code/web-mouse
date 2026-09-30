@@ -17,10 +17,36 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
   const [isInIframe, setIsInIframe] = useState(false);
   const [scannedResult, setScannedResult] = useState<any | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [pinInput, setPinInput] = useState('');
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isStoppingRef = useRef(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraCaptureInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+
+  const isInsecureHttp = typeof window !== 'undefined' &&
+    window.location.protocol === 'http:' &&
+    window.location.hostname !== 'localhost' &&
+    window.location.hostname !== '127.0.0.1';
+
+  const handlePinSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanPin = pinInput.trim();
+    if (!cleanPin) return;
+    safelyStopScanner().finally(() => {
+      const host = (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+        ? window.location.hostname
+        : '127.0.0.1';
+      onScan({
+        host,
+        port: 8765,
+        code: cleanPin,
+        pin: cleanPin,
+        token: cleanPin,
+        deviceName: 'Windows PC',
+      });
+    });
+  };
 
   useEffect(() => {
     try {
@@ -422,10 +448,11 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
       processDecodedText(decodedText);
     } catch (err) {
       console.warn('Scan file error:', err);
-      setError('इस फोटो में QR कोड नहीं मिला। कृपया PC स्क्रीन का स्पष्ट फोटो लें।');
+      setError('इस फोटो में QR कोड नहीं मिला। कृपया PC स्क्रीन का स्पष्ट फोटो लें, या नीचे 6-अंकों का PIN दर्ज करें।');
     } finally {
       setIsScanningFile(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (cameraCaptureInputRef.current) cameraCaptureInputRef.current.value = '';
+      if (galleryInputRef.current) galleryInputRef.current.value = '';
     }
   };
 
@@ -461,13 +488,13 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
         </div>
 
         {/* Camera Container */}
-        <div className="p-4 flex-1 relative bg-black flex flex-col items-center justify-center min-h-[290px]">
+        <div className="p-4 flex-1 relative bg-black flex flex-col items-center justify-center min-h-[300px]">
           <div
             id="qr-reader"
             className="w-full h-full min-h-[260px] overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 flex items-center justify-center relative"
           />
 
-          {/* Connecting Countdown Overlay requested by user */}
+          {/* Connecting Countdown Overlay */}
           {scannedResult && countdown !== null && (
             <div className="absolute inset-0 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-30 animate-in fade-in duration-200">
               <div className="w-14 h-14 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center text-emerald-400 mb-3 shadow-lg shadow-emerald-500/30">
@@ -522,46 +549,69 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
             </div>
           )}
 
-          {/* Error Banner with helpful direct solutions */}
+          {/* In-view Error / Fallback Card (High-Impact UI for HTTP & Camera Block) */}
           {error && (
-            <div className="absolute inset-x-4 bottom-4 p-3.5 bg-zinc-950/95 border border-rose-500/50 rounded-2xl text-zinc-200 text-xs shadow-2xl backdrop-blur-md z-20 space-y-2">
-              <div className="flex items-start gap-2 text-rose-300">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
-                <span className="leading-snug">{error}</span>
+            <div className="absolute inset-x-3 bottom-3 p-3.5 bg-zinc-950/95 border border-amber-500/50 rounded-2xl text-zinc-200 text-xs shadow-2xl backdrop-blur-md z-20 space-y-2.5">
+              <div className="flex items-start gap-2 text-amber-300">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                <span className="leading-snug text-[11px]">{error}</span>
               </div>
 
-              {/* Quick Action options when camera fails */}
-              <div className="flex items-center gap-2 pt-1">
+              {/* 1-Tap Camera Snap & Gallery Buttons */}
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => startCamera(availableCameras, (currentCameraIndex + 1) % (availableCameras.length || 1))}
-                  className="flex-1 py-1.5 px-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-medium flex items-center justify-center gap-1 transition-colors"
+                  onClick={() => cameraCaptureInputRef.current?.click()}
+                  className="flex-1 py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95"
                 >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>पुनः प्रयास (Retry)</span>
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>📸 कैमरे से फोटो खींचें</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm"
+                  onClick={() => galleryInputRef.current?.click()}
+                  className="py-2 px-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors"
                 >
-                  <Upload className="w-3 h-3" />
-                  <span>फोटो चुनें</span>
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>गैलरी</span>
                 </button>
               </div>
 
-              {isInIframe && (
-                <p className="text-[10px] text-amber-300/80 pt-0.5 leading-tight">
-                  💡 टिप: प्रीव्यू विंडो में कैमरा ब्लॉक होने पर ऐप को न्यू टैब (New Tab) में खोलें।
-                </p>
-              )}
+              {/* Instant 6-Digit PIN input right inside scanner */}
+              <div className="p-2.5 bg-zinc-900 border border-zinc-800 rounded-xl space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-bold text-white flex items-center gap-1">
+                    <Terminal className="w-3 h-3 text-indigo-400" />
+                    <span>या 6-अंकों का PIN डालें:</span>
+                  </span>
+                  <span className="text-[10px] text-zinc-400 font-mono">CMD में दिखेगा</span>
+                </div>
+                <form onSubmit={handlePinSubmit} className="flex gap-2">
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={pinInput}
+                    onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
+                    placeholder="e.g. 582914"
+                    className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-center font-mono text-sm tracking-widest text-white focus:outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!pinInput.trim()}
+                    className="py-1.5 px-3 bg-indigo-600 hover:bg-indigo-500 active:scale-95 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-all shadow-md flex items-center gap-1 shrink-0"
+                  >
+                    <span>Connect</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                </form>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Hidden file input for Photo QR scan */}
+        {/* Hidden native camera capture input (Works on HTTP!) */}
         <input
-          ref={fileInputRef}
+          ref={cameraCaptureInputRef}
           type="file"
           accept="image/*"
           capture="environment"
@@ -569,35 +619,39 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
           className="hidden"
         />
 
-        {/* Bottom Bar: Alternate Pairing Options */}
+        {/* Hidden gallery file input */}
+        <input
+          ref={galleryInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileUpload}
+          className="hidden"
+        />
+
+        {/* Bottom Bar: Instant Actions */}
         <div className="p-3 bg-zinc-950 border-t border-zinc-800/80 space-y-2">
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex-1 py-2 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 active:scale-95 text-zinc-300 hover:text-white border border-zinc-800 text-xs font-medium flex items-center justify-center gap-1.5 transition-all"
+              onClick={() => cameraCaptureInputRef.current?.click()}
+              className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 active:scale-95 text-white border border-emerald-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md"
             >
-              <Upload className="w-3.5 h-3.5 text-emerald-400" />
-              <span>फोटो / स्क्रीनशॉट से स्कैन करें</span>
+              <Camera className="w-4 h-4" />
+              <span>📸 कैमरे से फोटो खींचें</span>
             </button>
 
-            {onManualPin && (
-              <button
-                type="button"
-                onClick={() => {
-                  safelyStopScanner();
-                  onManualPin();
-                }}
-                className="py-2 px-3 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
-              >
-                <Terminal className="w-3.5 h-3.5" />
-                <span>PIN डालें</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => galleryInputRef.current?.click()}
+              className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 active:scale-95 text-zinc-300 border border-zinc-800 text-xs font-semibold flex items-center gap-1.5 transition-all"
+            >
+              <Upload className="w-3.5 h-3.5 text-indigo-400" />
+              <span>गैलरी</span>
+            </button>
           </div>
 
           <p className="text-[11px] text-zinc-400 text-center">
-            लैपटॉप के CMD में दिख रहे QR कोड पर फोन का कैमरा फोकस करें।
+            लैपटॉप के CMD में दिख रहे QR कोड का फोटो लें या 6-अंकों का PIN दर्ज करें।
           </p>
         </div>
       </div>

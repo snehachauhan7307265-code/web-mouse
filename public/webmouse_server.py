@@ -1250,21 +1250,30 @@ class WebMouseServer:
 
         # Helper to construct HTTP responses for both websockets APIs (binary or text)
         def send_http(status_code: int, content_type: str, body):
+            import http
             body_bytes = body if isinstance(body, bytes) else body.encode('utf-8')
             ct_header = content_type if ("charset" in content_type or not content_type.startswith("text/")) else f"{content_type}; charset=utf-8"
+            # NOTE: Do NOT add 'Connection' or 'Content-Length' headers here because websockets
+            # automatically inserts them in write_http_response. Overwriting them raises ValueError!
             resp_headers = [
                 ("Content-Type", ct_header),
-                ("Content-Length", str(len(body_bytes))),
                 ("Access-Control-Allow-Origin", "*"),
                 ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
                 ("Access-Control-Allow-Headers", "*"),
                 ("Access-Control-Allow-Private-Network", "true"),
-                ("Connection", "close")
             ]
             if is_new_api and connection is not None and hasattr(connection, 'respond'):
-                import http
-                return connection.respond(http.HTTPStatus(status_code), body_bytes)
-            import http
+                try:
+                    resp = connection.respond(http.HTTPStatus(status_code), body_bytes)
+                    if hasattr(resp, 'headers'):
+                        resp.headers["Content-Type"] = ct_header
+                        resp.headers["Access-Control-Allow-Origin"] = "*"
+                    return resp
+                except Exception:
+                    try:
+                        return connection.respond(http.HTTPStatus(status_code), resp_headers, body_bytes)
+                    except Exception:
+                        pass
             return (http.HTTPStatus(status_code), resp_headers, body_bytes)
 
         try:
@@ -2545,23 +2554,10 @@ async def main():
     asyncio.create_task(safe_watch_send_folder())
 
     try:
-        if HAS_WEBSOCKETS_PKG:
-            async with websockets.serve(
-                server.handle_connection,
-                server.host,
-                server.port,
-                process_request=server.process_request,
-                ping_interval=20,
-                ping_timeout=20,
-                max_size=10_000_000
-            ):
-                print(f"[*] WebMouse Helper is ACTIVE and listening on port {server.port}.")
-                print("[*] Keep this Command Prompt window OPEN while using WebMouse.\n")
-                # Run forever
-                await asyncio.Future()
-        else:
-            server_runner = PurePythonWebSocketServer(server)
-            await server_runner.start()
+        # PurePythonWebSocketServer seamlessly handles BOTH standard browser HTTP (GET /, /status, /web_dist)
+        # and WebSocket RFC 6455 upgrades on port 8765 without throwing 'invalid Connection header: keep-alive'.
+        server_runner = PurePythonWebSocketServer(server)
+        await server_runner.start()
     except OSError as e:
         err_str = str(e).lower()
         lan_ip = get_local_ip()
