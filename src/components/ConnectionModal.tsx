@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Laptop, ArrowRight, CheckCircle2, 
-  AlertCircle, RefreshCw, QrCode, Scan, 
+  AlertCircle, AlertTriangle, ExternalLink, RefreshCw, QrCode, Scan, 
   Download, Smartphone, Terminal, HelpCircle
 } from 'lucide-react';
 import { ConnectionConfig, ConnectionStatus, ConnectedDeviceInfo } from '../types';
@@ -365,26 +365,26 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
               <div className="p-4 bg-zinc-950/80 rounded-2xl border border-zinc-800 space-y-3.5">
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                   <Laptop className="w-4 h-4 text-indigo-400" />
-                  <span>Windows Helper Connection</span>
+                  <span>Windows Helper Direct Connection</span>
                 </h3>
 
                 <form onSubmit={handleConnect} className="space-y-3">
                   <div className="grid grid-cols-3 gap-2">
                     <div className="col-span-2 space-y-1">
                       <label className="text-[11px] font-semibold text-zinc-300">
-                        Laptop Wi-Fi IP Address
+                        Local IP Address (Laptop CMD me dikhega)
                       </label>
                       <input
                         id="input-pc-ip"
                         type="text"
                         value={host}
                         onChange={(e) => setHost(e.target.value)}
-                        placeholder="e.g. 192.168.1.15"
+                        placeholder="Enter the IP shown in the CMD window (e.g., 192.168.1.15)"
                         className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500 transition-colors"
                         required
                       />
-                      <p className="text-[10px] text-zinc-500">
-                        Shown in green text in laptop CMD window.
+                      <p className="text-[10px] text-emerald-400 font-medium">
+                        Enter the IP shown in the CMD window (e.g., 192.168.1.15)
                       </p>
                     </div>
 
@@ -407,8 +407,8 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
                   <div className="space-y-1">
                     <label className="text-[11px] font-semibold text-zinc-300 flex items-center justify-between">
-                      <span>6-Digit Pairing Code</span>
-                      <span className="text-[10px] text-zinc-500 font-normal">Shown in CMD banner</span>
+                      <span>Pairing Code (6 Digits)</span>
+                      <span className="text-[10px] text-zinc-400 font-normal">CMD window me dikhega</span>
                     </label>
                     <input
                       id="input-pc-code"
@@ -416,10 +416,13 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                       maxLength={6}
                       value={code}
                       onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                      placeholder="e.g. 123456"
-                      className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono tracking-widest text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                      placeholder="Enter the 6-digit PIN (e.g., 483921)"
+                      className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono tracking-widest text-white focus:outline-none focus:border-indigo-500 transition-colors"
                       required
                     />
+                    <p className="text-[10px] text-indigo-400 font-medium">
+                      Enter the 6-digit PIN (e.g., 483921)
+                    </p>
                   </div>
 
                   <div className="pt-1">
@@ -434,11 +437,32 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     </label>
                   </div>
 
+                  {typeof window !== 'undefined' && window.location.protocol === 'https:' && (
+                    <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/40 text-[11px] text-amber-200/90 space-y-1.5">
+                      <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>Phone se connect nahi ho raha to direct local link kholein:</span>
+                      </div>
+                      <p className="leading-relaxed text-[10px]">
+                        Browser HTTPS par local WebSocket block karta hai. Phone ke Chrome/Safari me directly ye URL dalein:
+                      </p>
+                      <a
+                        href={`http://${host ? host.replace(/^(https?:\/\/|wss?:\/\/)/, '').split(':')[0] : '192.168.1.15'}:${port || '8765'}/`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 font-mono font-bold text-emerald-400 bg-black/60 px-2.5 py-1.5 rounded-lg border border-emerald-500/30 hover:bg-black transition-colors"
+                      >
+                        <span>http://{host ? host.replace(/^(https?:\/\/|wss?:\/\/)/, '').split(':')[0] : '192.168.1.15'}:{port || '8765'}/</span>
+                        <ExternalLink className="w-3 h-3 text-emerald-400" />
+                      </a>
+                    </div>
+                  )}
+
                   <button
                     id="btn-submit-pc-connect"
                     type="submit"
                     disabled={isConnecting || !host.trim() || !code.trim()}
-                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 active:scale-[0.98] text-white font-bold text-xs transition-all shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-[0.98] text-white font-bold text-xs transition-all shadow-md shadow-emerald-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {isConnecting ? (
                       <>
@@ -447,7 +471,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                       </>
                     ) : (
                       <>
-                        <span>⚡ Connect</span>
+                        <span>⚡ Connect to PC (IP &amp; PIN)</span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}

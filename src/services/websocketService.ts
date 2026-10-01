@@ -138,18 +138,31 @@ export class WebSocketClient {
       }
     }
 
-    const clean = rawHost.replace(/^(ws:\/\/|wss:\/\/|http:\/\/|https:\/\/)/, '').replace(/\/+$/, '');
-    let wsUrl = '';
-    if (rawHost.startsWith('ws://') || rawHost.startsWith('wss://')) {
-      wsUrl = rawHost;
-    } else if (rawHost.startsWith('http://')) {
-      wsUrl = `ws://${rawHost.slice(7)}`;
-    } else if (rawHost.startsWith('https://')) {
-      wsUrl = `wss://${rawHost.slice(8)}`;
-    } else {
-      const hasPort = clean.includes(':') && !clean.includes('::');
-      wsUrl = hasPort ? `ws://${clean}` : `ws://${clean}:${defaultPort}`;
+    let hostOnly = rawHost;
+    let targetPort = defaultPort;
+
+    try {
+      if (rawHost.includes('://')) {
+        const parsedUrl = new URL(rawHost.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://'));
+        hostOnly = parsedUrl.hostname;
+        if (parsedUrl.port) targetPort = parseInt(parsedUrl.port, 10);
+      } else {
+        const withoutSlash = rawHost.split('/')[0].trim();
+        if (withoutSlash.includes(':')) {
+          const parts = withoutSlash.split(':');
+          hostOnly = parts[0];
+          const p = parseInt(parts[1], 10);
+          if (!isNaN(p) && p > 0) targetPort = p;
+        } else {
+          hostOnly = withoutSlash;
+        }
+      }
+    } catch {
+      hostOnly = rawHost.replace(/^(ws:\/\/|wss:\/\/|http:\/\/|https:\/\/)/, '').replace(/\/+$/, '').split(':')[0];
     }
+
+    const wsUrl = `ws://${hostOnly}:${targetPort}`;
+    const clean = hostOnly;
 
     this.setStatus(isAutoReconnect ? 'reconnecting' : 'connecting');
     this.addLog('sys', `Connecting to ${wsUrl}...`);

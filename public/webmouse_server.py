@@ -7,7 +7,8 @@ for a Windows computer over the same local Wi-Fi network.
 
 Controls the REAL Windows cursor using PyAutoGUI (with ctypes user32 fallback).
 Listens on WebSocket port 8765 with 6-digit pairing code authentication.
-Gracefully handles HTTP browser visits without 'invalid Connection header: keep-alive'.
+Accurately detects laptop Wi-Fi IP, displays scannable QR in CMD,
+and gracefully handles HTTP browser requests without 'invalid Connection header: keep-alive'.
 """
 
 import asyncio
@@ -19,8 +20,11 @@ import argparse
 import os
 import base64
 import http
+import subprocess
+import re
+import webbrowser
 from pathlib import Path
-from typing import Set, Dict, Any, Optional
+from typing import Set, Dict, Any, Optional, Tuple, List
 
 # Windows Native user32 fallback controller
 class WindowsNativeController:
@@ -140,7 +144,6 @@ try:
     from websockets.server import WebSocketServerProtocol
 except ImportError:
     try:
-        import subprocess
         print("[*] Installing 'websockets' library...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "websockets"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         import websockets
@@ -150,7 +153,16 @@ except ImportError:
         print("Please install requirements using: pip install websockets pyautogui pyperclip\n")
         sys.exit(1)
 
-import webbrowser
+# QR Code import with automatic pip fallback
+qrcode = None
+try:
+    import qrcode
+except ImportError:
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "qrcode"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        import qrcode
+    except Exception:
+        qrcode = None
 
 KEY_MAP = {
     "enter": "enter", "return": "enter", "backspace": "backspace", "delete": "delete",
@@ -165,32 +177,94 @@ KEY_MAP = {
     "f7": "f7", "f8": "f8", "f9": "f9", "f10": "f10", "f11": "f11", "f12": "f12",
 }
 
-def get_local_ip() -> str:
-    """Detect the local Wi-Fi / Ethernet IPv4 address."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-    except Exception:
-        try:
-            ip = socket.gethostbyname(socket.gethostname())
-        except Exception:
-            ip = "127.0.0.1"
-    finally:
-        s.close()
-    return ip
+def get_wifi_and_all_ips() -> Tuple[str, List[str]]:
+    """
+    Detect the exact Wi-Fi IP address on Windows, along with any other local network IPs.
+    Prioritizes real active Wi-Fi adapters over virtual/loopback adapters.
+    """
+    wifi_ip = None
+    all_ips: List[str] = []
 
-def print_ascii_qr(data: str):
-    """Attempt to render a QR code in the terminal using qrcode if available."""
+    # 1. On Windows: inspect ipconfig to find the Wireless / Wi-Fi adapter IPv4
+    if sys.platform == "win32":
+        try:
+            output = subprocess.check_output("ipconfig", shell=True, text=True, errors="ignore")
+            current_adapter = ""
+            is_wifi = False
+            for line in output.splitlines():
+                stripped = line.strip()
+                if line and not line.startswith(" ") and not line.startswith("\t"):
+                    current_adapter = line.lower()
+                    is_wifi = any(k in current_adapter for k in ["wireless", "wi-fi", "wifi", "wlan"])
+                elif is_wifi and "ipv4" in stripped.lower():
+                    match = re.search(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", stripped)
+                    if match:
+                        found_ip = match.group(1)
+                        if not found_ip.startswith("127.") and not found_ip.startswith("169.254."):
+                            wifi_ip = found_ip
+                            if found_ip not in all_ips:
+                                all_ips.append(found_ip)
+        except Exception:
+            pass
+
+    # 2. Probe default UDP routing interface (e.g. Wi-Fi router gateway)
     try:
-        import qrcode
-        qr = qrcode.QRCode(border=1)
-        qr.add_data(data)
-        qr.make(fit=True)
-        print("\nScan with WebMouse Phone App:")
-        qr.print_ascii(invert=True)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        probe_ip = s.getsockname()[0]
+        s.close()
+        if probe_ip and not probe_ip.startswith("127.") and not probe_ip.startswith("169.254."):
+            if not wifi_ip:
+                wifi_ip = probe_ip
+            if probe_ip not in all_ips:
+                all_ips.append(probe_ip)
     except Exception:
         pass
+
+    # 3. Hostname resolution fallback
+    try:
+        host_ip = socket.gethostbyname(socket.gethostname())
+        if host_ip and not host_ip.startswith("127.") and not host_ip.startswith("169.254."):
+            if not wifi_ip:
+                wifi_ip = host_ip
+            if host_ip not in all_ips:
+                all_ips.append(host_ip)
+    except Exception:
+        pass
+
+    if not wifi_ip:
+        wifi_ip = "127.0.0.1"
+    if not all_ips:
+        all_ips = [wifi_ip]
+
+    return wifi_ip, all_ips
+
+def print_ascii_qr(data: str):
+    """Render a clean QR code in the Windows CMD terminal."""
+    global qrcode
+    if qrcode is None:
+        try:
+            import qrcode as _qr
+            qrcode = _qr
+        except Exception:
+            pass
+
+    if qrcode is not None:
+        try:
+            qr = qrcode.QRCode(border=1)
+            qr.add_data(data)
+            qr.make(fit=True)
+            print("=" * 60)
+            print("        📷 PHONE SCANNER SE YE QR CODE SCAN KAREIN:")
+            print("=" * 60)
+            qr.print_ascii(invert=True)
+            print("=" * 60 + "\n")
+            return
+        except Exception:
+            pass
+
+    print("\n[NOTE] Terminal QR: Install 'qrcode' (pip install qrcode) to view QR in CMD.")
+
 
 class WebMouseServer:
     def __init__(self, host: str, port: int, pairing_code: str):
@@ -206,43 +280,39 @@ class WebMouseServer:
         except Exception:
             self.screen_width, self.screen_height = (1920, 1080)
 
-    def print_banner(self):
+    def print_banner(self, wifi_ip: str, all_ips: List[str]):
         computer_name = socket.gethostname()
-        ip = get_local_ip()
-        print("\n" + "=" * 54)
-        print("                 WEBMOUSE V1 — WINDOWS HELPER")
+        print("\n" + "=" * 62)
+        print("             WEBMOUSE V1 — WINDOWS HELPER SERVER")
         print("          Phone -> Computer control over Wi-Fi")
-        print("=" * 54)
-        print(f"Status:       RUNNING")
-        print(f"Computer:     {computer_name}")
-        print(f"Computer IP:  {ip}")
-        print(f"Port:         {self.port}")
-        print(f"Pairing Code: {self.pairing_code}")
-        print("-" * 54)
-        print("HOW TO CONNECT FROM PHONE:")
-        print("1. Ensure Phone and PC are on the SAME Wi-Fi network.")
-        print("2. Open WebMouse in your phone browser:")
-        print(f"   Enter IP:   {ip}")
-        print(f"   Enter Port: {self.port}")
-        print(f"   Enter PIN:  {self.pairing_code}")
-        print("3. Tap 'Connect to PC' or use '📷 Scan QR'")
-        print("=" * 54 + "\n")
+        print("=" * 62)
+        print(f" Status:       RUNNING (Port {self.port})")
+        print(f" Computer:     {computer_name}")
+        print(f" Wi-Fi IP:     {wifi_ip}   <=== [Enter this IP in Phone]")
+        print(f" Port:         {self.port}")
+        print(f" Pairing PIN:  {self.pairing_code}       <=== [Enter this 6-Digit PIN]")
+        if len(all_ips) > 1:
+            other_ips = [ip for ip in all_ips if ip != wifi_ip]
+            if other_ips:
+                print(f" Other IPs:    {', '.join(other_ips)}")
+        print("-" * 62)
+        print(" HOW TO CONNECT FROM PHONE:")
+        print(" 1. Phone aur Laptop ko SAME Wi-Fi se connect karein.")
+        print(" 2. Phone me WebMouse open karein:")
+        print(f"    - Local IP:    {wifi_ip}")
+        print(f"    - Pairing PIN: {self.pairing_code}")
+        print(" 3. '⚡ Connect to PC' dabayein ya niche diya gaya QR scan karein!")
+        print("=" * 62)
         
-        # QR Code payload (JSON + URL compatible)
-        qr_payload = json.dumps({
-            "protocol": "webmouse",
-            "host": ip,
-            "port": self.port,
-            "code": self.pairing_code,
-            "deviceName": computer_name
-        })
+        # QR Code payload: standard URL that opens the local app directly with zero Mixed Content issues
+        qr_payload = f"http://{wifi_ip}:{self.port}/?pair={self.pairing_code}"
         print_ascii_qr(qr_payload)
-        print("Awaiting connection from phone...\n")
+        print(f"[*] Awaiting connection from phone on port {self.port}...\n")
 
     async def handle_connection(self, websocket: Any):
         peer = getattr(websocket, "remote_address", ("unknown", 0))
         client_addr = f"{peer[0]}:{peer[1]}"
-        print(f"[+] CONNECTED: Client from {client_addr}")
+        print(f"[+] CONNECTED: Phone from {client_addr}")
 
         try:
             async for raw_message in websocket:
@@ -537,7 +607,6 @@ async def process_http_request(path: str, request_headers: Any, pairing_code: st
     You cannot access a WebSocket server directly with a browser. You need a WebSocket client.'
     """
     upgrade = ""
-    # Look for Upgrade header in request headers
     if hasattr(request_headers, "get"):
         upgrade = request_headers.get("Upgrade", "")
     elif isinstance(request_headers, (list, tuple)):
@@ -547,7 +616,7 @@ async def process_http_request(path: str, request_headers: Any, pairing_code: st
                 break
 
     if upgrade.lower() != "websocket":
-        # Regular HTTP request from a browser! Serve informative status page
+        # Regular HTTP request from a browser! Serve informative status & connection page
         html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -635,9 +704,23 @@ async def process_http_request(path: str, request_headers: Any, pairing_code: st
       border: 1px solid #1f2937;
       border-radius: 0.75rem;
       padding: 0.85rem 1rem;
+      margin-bottom: 1.25rem;
     }}
     .instructions ol {{ margin-left: 1.25rem; }}
     .instructions li {{ margin-bottom: 0.35rem; }}
+    .btn {{
+      display: block;
+      width: 100%;
+      background: #4f46e5;
+      color: white;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.9rem;
+      padding: 0.75rem;
+      border-radius: 0.75rem;
+      transition: background 0.2s;
+    }}
+    .btn:hover {{ background: #4338ca; }}
   </style>
 </head>
 <body>
@@ -660,7 +743,7 @@ async def process_http_request(path: str, request_headers: Any, pairing_code: st
         <span class="info-val">{socket.gethostname()}</span>
       </div>
       <div class="info-row">
-        <span class="info-label">IP Address</span>
+        <span class="info-label">Wi-Fi IP Address</span>
         <span class="info-val">{ip}</span>
       </div>
       <div class="info-row">
@@ -671,11 +754,15 @@ async def process_http_request(path: str, request_headers: Any, pairing_code: st
 
     <div class="instructions">
       <ol>
-        <li>Connect your phone to the <strong>same Wi-Fi</strong>.</li>
-        <li>Open the <strong>WebMouse</strong> web app on your phone.</li>
-        <li>Tap <strong>Connect to PC</strong>, enter IP <code>{ip}</code> and PIN <code>{pairing_code}</code>.</li>
-        <li>Your phone becomes your Windows mouse touchpad!</li>
+        <li>Connect phone to the <strong>same Wi-Fi</strong>.</li>
+        <li>In WebMouse on phone:</li>
+        <li>Enter IP <code>{ip}</code> and PIN <code>{pairing_code}</code>.</li>
+        <li>Tap <strong>Connect to PC</strong>!</li>
       </ol>
+    </div>
+
+    <div style="font-size: 0.75rem; color: #71717a;">
+      WebSocket endpoint: <code>ws://{ip}:{port}/</code>
     </div>
   </div>
 </body>
@@ -707,13 +794,13 @@ async def main():
     else:
         pairing_code = f"{random.randint(100000, 999999)}"
 
-    ip = get_local_ip()
+    wifi_ip, all_ips = get_wifi_and_all_ips()
     server = WebMouseServer(host=args.host, port=args.port, pairing_code=pairing_code)
-    server.print_banner()
+    server.print_banner(wifi_ip, all_ips)
 
     # Custom process_request hook to gracefully handle browser HTTP requests
     async def request_hook(path, request_headers):
-        return await process_http_request(path, request_headers, pairing_code, ip, args.port)
+        return await process_http_request(path, request_headers, pairing_code, wifi_ip, args.port)
 
     # Start the WebSocket server on port 8765
     async with websockets.serve(

@@ -10,7 +10,7 @@ echo ================================================================
 echo           WEBMOUSE V1 — WINDOWS HELPER (CMD LAUNCHER)
 echo ================================================================
 echo.
-echo [*] Initializing WebMouse Windows Helper...
+echo [*] Initializing WebMouse Windows Helper on Port 8765...
 echo [*] THIS CMD WINDOW WILL STAY OPEN SO YOU CAN READ YOUR PAIRING PIN!
 echo.
 
@@ -48,7 +48,11 @@ if not exist "%~dp0webmouse_server.py" (
     goto END_HANG
 )
 
-:: 3. Check and install dependencies
+:: 3. Automatically allow port 8765 in Windows Firewall
+echo [*] Configuring Windows Firewall for Port 8765...
+netsh advfirewall firewall add rule name="WebMouse Helper Port 8765" dir=in action=allow protocol=TCP localport=8765 >nul 2>&1
+
+:: 4. Check and install dependencies
 %PYTHON_CMD% -c "import websockets" >nul 2>&1
 if %errorlevel% neq 0 (
     echo [*] Installing required 'websockets' library (takes ~5 seconds)...
@@ -61,7 +65,13 @@ if %errorlevel% neq 0 (
     %PYTHON_CMD% -m pip install pyautogui pyperclip
 )
 
-:: 4. Run server in persistent loop - will NEVER close accidentally
+%PYTHON_CMD% -c "import qrcode" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [*] Installing 'qrcode' for terminal QR display...
+    %PYTHON_CMD% -m pip install qrcode
+)
+
+:: 5. Run server in persistent loop - will NEVER close accidentally
 :RUN_SERVER_LOOP
 echo.
 echo ================================================================
