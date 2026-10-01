@@ -326,39 +326,32 @@ class PurePythonWebSocketServer:
         import urllib.parse
         parsed = urllib.parse.urlparse(path)
         req_path = parsed.path
-        is_html_client = "text/html" in headers.get("accept", "").lower() and "application/json" not in headers.get("accept", "").lower()
-        if req_path in ("/health", "/status", "/api/health", "/api/status", "/api/pairing-info", "/api/info", "/info") or (req_path == "/" and not is_html_client):
+        is_json_requested = "application/json" in headers.get("accept", "").lower() or "json" in parsed.query.lower()
+        if req_path in ("/health", "/status", "/api/health", "/api/status", "/api/pairing-info", "/api/info", "/info") or (req_path == "/" and is_json_requested):
             import secrets, time
             temp_token = secrets.token_hex(16)
-            expires_at = int(time.time() + 3600)
+            expires_at = int(time.time() + 60)
             self.server.qr_tokens[temp_token] = expires_at
-            all_ips = get_all_local_ips()
-            current_lan_ip = all_ips[0] if all_ips else "127.0.0.1"
-
             qr_payload = {
-                "protocol": "webmouse",
                 "type": "webmouse_pair",
+                "protocol": "webmouse",
                 "version": 2,
-                "deviceName": socket.gethostname(),
                 "host": current_lan_ip,
+                "ip": current_lan_ip,
                 "port": self.server.port,
-                "transport": "ws",
                 "pairingCode": self.server.pairing_code,
-                "code": self.server.pairing_code,
                 "token": temp_token,
-                "expiresAt": expires_at,
-                "pairUrl": f"http://{current_lan_ip}:{self.server.port}/?pair={self.server.pairing_code}"
+                "deviceName": socket.gethostname(),
+                "expiresAt": expires_at
             }
             data = {
                 "status": "running",
                 "version": "2.0.0",
                 "deviceName": socket.gethostname(),
                 "lanIp": current_lan_ip,
-                "allIps": all_ips,
                 "host": current_lan_ip,
                 "ip": current_lan_ip,
                 "port": self.server.port,
-                "websocket": True,
                 "pairingAvailable": True,
                 "type": "host_pairing_info",
                 "token": temp_token,
@@ -367,7 +360,6 @@ class PurePythonWebSocketServer:
                 "pairingCode": self.server.pairing_code,
                 "expiresAt": expires_at,
                 "qrPayload": qr_payload,
-                "pairUrl": f"http://{current_lan_ip}:{self.server.port}/?pair={self.server.pairing_code}",
                 "connectedDevices": len(self.server.authenticated_clients)
             }
             body = json.dumps(data).encode('utf-8')
@@ -384,65 +376,12 @@ class PurePythonWebSocketServer:
             writer.write(resp.encode() + body)
             await writer.drain()
         else:
-            current_lan_ip = get_local_ip()
-            body = f"""<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>WebMouse Controller</title>
-  <style>
-    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{ background: #09090b; color: #fff; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }}
-    header {{ padding: 12px 16px; background: #18181b; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #27272a; }}
-    .badge {{ font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #064e3b; color: #34d399; font-weight: bold; }}
-    #pad {{ flex: 1; margin: 12px; background: #141418; border: 2px dashed #27272a; border-radius: 20px; display: flex; align-items: center; justify-content: center; touch-action: none; }}
-    #pad:active {{ border-color: #6366f1; background: #1c1c24; }}
-    .row {{ display: flex; gap: 8px; padding: 0 12px 10px; }}
-    button {{ flex: 1; padding: 14px; background: #27272a; border: 1px solid #3f3f46; color: #fff; border-radius: 12px; font-weight: bold; font-size: 14px; }}
-    button:active {{ background: #6366f1; }}
-  </style>
-</head>
-<body>
-  <header>
-    <div><strong>🖱️ WebMouse</strong> <span style="font-size:11px;color:#a1a1aa;">{current_lan_ip}:{self.server.port}</span></div>
-    <div id="st" class="badge">Connected 🟢</div>
-  </header>
-  <div id="pad">
-    <div style="color:#71717a;font-size:13px;text-align:center;">👆 Touch to Move Mouse<br><span style="font-size:11px;color:#52525b;">Tap: Click</span></div>
-  </div>
-  <div class="row">
-    <button id="l">Left Click</button>
-    <button id="r">Right Click</button>
-  </div>
-  <script>
-    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-    const pin = new URLSearchParams(location.search).get('pair') || '{self.server.pairing_code}';
-    ws.onopen = () => ws.send(JSON.stringify({{ type: 'auth', code: pin, token: pin, deviceName: 'Mobile WebMouse' }}));
-    function send(o) {{ if (ws.readyState === 1) ws.send(JSON.stringify(o)); }}
-    let lx = 0, ly = 0, tm = 0, moved = false;
-    const p = document.getElementById('pad');
-    p.ontouchstart = (e) => {{ if (e.touches.length === 1) {{ lx = e.touches[0].clientX; ly = e.touches[0].clientY; tm = Date.now(); moved = false; }} }};
-    p.ontouchmove = (e) => {{
-      e.preventDefault();
-      if (e.touches.length === 1) {{
-        const dx = (e.touches[0].clientX - lx) * 1.5, dy = (e.touches[0].clientY - ly) * 1.5;
-        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {{ moved = true; send({{ type: 'mouse_move', dx: Math.round(dx), dy: Math.round(dy) }}); }}
-        lx = e.touches[0].clientX; ly = e.touches[0].clientY;
-      }}
-    }};
-    p.ontouchend = () => {{ if (!moved && Date.now() - tm < 250) send({{ type: 'mouse_click', button: 'left' }}); }};
-    document.getElementById('l').onclick = () => send({{ type: 'mouse_click', button: 'left' }});
-    document.getElementById('r').onclick = () => send({{ type: 'mouse_click', button: 'right' }});
-  </script>
-</body>
-</html>""".encode("utf-8")
+            body = b"WebMouse V1 Helper Server Active"
             resp = (
                 "HTTP/1.1 200 OK\r\n"
-                "Content-Type: text/html; charset=utf-8\r\n"
+                "Content-Type: text/plain; charset=utf-8\r\n"
                 f"Content-Length: {len(body)}\r\n"
                 "Access-Control-Allow-Origin: *\r\n"
-                "Access-Control-Allow-Private-Network: true\r\n"
                 "Connection: close\r\n\r\n"
             )
             writer.write(resp.encode() + body)
@@ -496,65 +435,29 @@ KEY_MAP = {
 }
 
 
-def get_all_local_ips() -> list:
+def get_local_ip() -> str:
     """
-    Detect all reachable private LAN IPv4 addresses of this Windows computer.
-    Robustly handles Wi-Fi, Ethernet, Windows Mobile Hotspot (192.168.137.x),
-    Phone Tethering (192.168.43.x / 172.20.10.x), and LAN routers (192.168.x.x, 10.x.x.x).
-    Filters out VirtualBox (192.168.56.x), Docker (172.17/18.x.x), WSL, APIPA (169.254.x.x), and loopback.
+    Detect the authoritative primary LAN IPv4 address of this Windows computer.
+    Prioritizes real private LAN subnets (192.168.x.x, 10.x.x.x, 172.16-31.x.x) and avoids
+    virtual adapters (VirtualBox 192.168.56.x, APIPA 169.254.x.x, WSL, Docker, Loopback 127.0.0.1).
     """
-    detected_candidates = []
-
-    def score_ip(ip: str, adapter_name: str, has_gateway: bool) -> int:
-        score = 0
-        ad_lower = adapter_name.lower()
-
-        # Highest priority: Windows Mobile Hotspot adapter or subnet
-        if ip.startswith("192.168.137.") or "direct virtual" in ad_lower or "hotspot" in ad_lower or "wi-fi direct" in ad_lower:
-            return 120
-
-        # Physical Wi-Fi or Ethernet
-        is_real_adapter = ("wi-fi" in ad_lower or "wireless" in ad_lower or "ethernet" in ad_lower or "wlan" in ad_lower or "local area" in ad_lower)
-        if "vethernet" in ad_lower or "virtualbox" in ad_lower or "docker" in ad_lower or "vmware" in ad_lower or "loopback" in ad_lower:
-            is_real_adapter = False
-
-        if has_gateway and is_real_adapter:
-            score += 100
-        elif is_real_adapter:
-            score += 85
-        elif has_gateway:
-            score += 70
-
-        # Subnet scoring
-        if ip.startswith("192.168.") and not ip.startswith("192.168.56."):
-            score += 30
-        elif ip.startswith("10."):
-            score += 25
-        elif ip.startswith("172."):
-            try:
-                second = int(ip.split(".")[1])
-                if 16 <= second <= 31 and second not in (17, 18):
-                    score += 20
-            except Exception:
-                pass
-
-        return score
+    detected_ips = []
 
     # Strategy 1: Active routing interface via UDP socket connect
-    for target in [("192.168.1.1", 80), ("10.0.0.1", 80), ("172.16.0.1", 80), ("8.8.8.8", 80), ("1.1.1.1", 80)]:
+    for target in [("8.8.8.8", 80), ("1.1.1.1", 80), ("192.168.1.1", 80), ("10.0.0.1", 80)]:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.settimeout(0.3)
+            s.settimeout(0.4)
             s.connect(target)
             ip = s.getsockname()[0]
             s.close()
             if ip and not ip.startswith("127.") and not ip.startswith("169.254.") and ip != "0.0.0.0":
-                detected_candidates.append((ip, "active-route", True))
+                detected_ips.append(ip)
                 break
         except Exception:
             pass
 
-    # Strategy 2: Windows ipconfig analysis for all active adapters (including Mobile Hotspot!)
+    # Strategy 2: Windows ipconfig analysis for active adapter with Default Gateway
     try:
         import subprocess
         creationflags = 0x08000000 if sys.platform == 'win32' else 0 # CREATE_NO_WINDOW
@@ -566,33 +469,47 @@ def get_all_local_ips() -> list:
             creationflags=creationflags
         ).stdout
 
-        current_adapter = "general"
+        current_adapter = ""
         adapter_has_gateway = False
         adapter_ip = ""
+        is_primary_type = False
 
         for raw_line in output.splitlines():
             line = raw_line.strip()
             if not raw_line.startswith(" ") and line.endswith(":"):
-                if adapter_ip:
-                    detected_candidates.append((adapter_ip, current_adapter, adapter_has_gateway))
+                if adapter_has_gateway and adapter_ip:
+                    if is_primary_type:
+                        detected_ips.insert(0, adapter_ip)
+                    else:
+                        detected_ips.append(adapter_ip)
                 current_adapter = line.lower()
                 adapter_has_gateway = False
                 adapter_ip = ""
-            elif "ipv4 address" in line.lower() or "ip address" in line.lower() or "adresse ipv4" in line.lower() or "dirección ipv4" in line.lower():
+                is_primary_type = (
+                    ("wi-fi" in current_adapter or "wireless" in current_adapter or "ethernet" in current_adapter or "wlan" in current_adapter)
+                    and "virtual" not in current_adapter
+                    and "vethernet" not in current_adapter
+                    and "docker" not in current_adapter
+                    and "bluetooth" not in current_adapter
+                )
+            elif "ipv4 address" in line.lower() or "ip address" in line.lower():
                 parts = line.split(":")
                 if len(parts) > 1:
-                    candidate = parts[1].replace("(Preferred)", "").replace("(preferred)", "").strip()
-                    if candidate and not candidate.startswith("127.") and not candidate.startswith("169.254.") and candidate != "0.0.0.0":
+                    candidate = parts[1].replace("(Preferred)", "").strip()
+                    if candidate and not candidate.startswith("127.") and not candidate.startswith("169.254."):
                         adapter_ip = candidate
-            elif "default gateway" in line.lower() or "passerelle par défaut" in line.lower() or "puerta de enlace" in line.lower():
+            elif "default gateway" in line.lower():
                 parts = line.split(":")
                 if len(parts) > 1:
                     gw = parts[1].strip()
                     if gw and gw != "::" and gw != "0.0.0.0":
                         adapter_has_gateway = True
 
-        if adapter_ip:
-            detected_candidates.append((adapter_ip, current_adapter, adapter_has_gateway))
+        if adapter_has_gateway and adapter_ip:
+            if is_primary_type:
+                detected_ips.insert(0, adapter_ip)
+            else:
+                detected_ips.append(adapter_ip)
     except Exception:
         pass
 
@@ -602,35 +519,38 @@ def get_all_local_ips() -> list:
         _, _, ip_list = socket.gethostbyname_ex(hostname)
         for ip in ip_list:
             if ip and not ip.startswith("127.") and not ip.startswith("169.254.") and ip != "0.0.0.0":
-                if not ip.startswith("192.168.56."):
-                    detected_candidates.append((ip, "gethostbyname", False))
+                if not ip.startswith("192.168.56."): # Skip VirtualBox host-only
+                    detected_ips.append(ip)
     except Exception:
         pass
 
-    # Deduplicate and sort by score
-    scored_map = {}
-    for ip, ad_name, has_gw in detected_candidates:
-        if ip.startswith("127.") or ip.startswith("169.254.") or ip.startswith("192.168.56."):
-            continue
-        sc = score_ip(ip, ad_name, has_gw)
-        if sc > scored_map.get(ip, -1):
-            scored_map[ip] = sc
+    # Scoring to select best active LAN IP
+    def ip_score(ip: str) -> int:
+        if ip.startswith("192.168.") and not ip.startswith("192.168.56."):
+            return 100
+        if ip.startswith("10."):
+            return 90
+        if ip.startswith("172."):
+            try:
+                second = int(ip.split(".")[1])
+                if 16 <= second <= 31:
+                    return 80
+            except Exception:
+                pass
+        if not ip.startswith("127.") and not ip.startswith("169.254."):
+            return 50
+        return 0
 
-    sorted_ips = sorted(scored_map.keys(), key=lambda k: scored_map[k], reverse=True)
-    if not sorted_ips:
-        sorted_ips = ["127.0.0.1"]
+    valid_ips = [ip for ip in detected_ips if ip_score(ip) > 0]
+    if valid_ips:
+        # Sort descending by priority score
+        valid_ips.sort(key=ip_score, reverse=True)
+        primary_lan_ip = valid_ips[0]
+        print(f"[DEBUG] detected LAN IP: {primary_lan_ip}")
+        return primary_lan_ip
 
-    return sorted_ips
-
-
-def get_local_ip() -> str:
-    """
-    Detect the authoritative primary LAN IPv4 address of this Windows computer.
-    """
-    all_ips = get_all_local_ips()
-    primary = all_ips[0] if all_ips else "127.0.0.1"
-    print(f"[DEBUG] detected primary LAN IP: {primary} (all valid: {all_ips})")
-    return primary
+    print("[DEBUG] detected LAN IP: 127.0.0.1 (No active private LAN detected)")
+    return "127.0.0.1"
 
 
 # =====================================================================
@@ -1167,47 +1087,20 @@ class WebMouseServer:
     def print_banner(self):
         lan_ip = get_local_ip()
         code_spaced = "  ".join(list(self.pairing_code))
-        direct_url = f"http://{lan_ip}:{self.port}/?pair={self.pairing_code}"
+        direct_url = f"http://{lan_ip}:{self.port}/"
         print("\n" + "=" * 64)
-        print("           WEBMOUSE V2 — WINDOWS HELPER (ACTIVE)")
+        print("           WEBMOUSE V1 — WINDOWS HELPER (CMD)")
         print("=" * 64)
-        print(f"  [STATUS]           RUNNING (PORT {self.port})")
+        print(f"  [STATUS]           RUNNING (DO NOT CLOSE THIS WINDOW)")
         print(f"  [LAPTOP WI-FI IP]  {lan_ip}")
         print(f"  [PORT]             {self.port}")
-        print(f"  [PAIRING PIN]      {self.pairing_code}")
-        print(f"  [DIRECT PHONE URL] {direct_url}")
         print("=" * 64)
         print(f"  >>> 6-DIGIT PAIRING PIN:   [  {code_spaced}  ] <<<")
         print("=" * 64)
-
-        # Print ASCII QR Code if qrcode package is present
-        try:
-            import qrcode
-            qr = qrcode.QRCode(border=1)
-            qr_payload = json.dumps({
-                "protocol": "webmouse",
-                "type": "webmouse_pair",
-                "version": 2,
-                "deviceName": socket.gethostname(),
-                "host": lan_ip,
-                "port": self.port,
-                "transport": "ws",
-                "code": self.pairing_code,
-                "pairingCode": self.pairing_code,
-                "pairUrl": direct_url
-            })
-            qr.add_data(qr_payload)
-            qr.make(fit=True)
-            print("\n  [SCAN THIS QR CODE FROM PHONE CAMERA OR WEBMOUSE APP]:")
-            qr.print_ascii(invert=True)
-        except Exception:
-            pass
-
         print("  HOW TO CONNECT FROM YOUR PHONE:")
-        print(f"  👉 FASTEST:")
-        print(f"     Scan the QR code above or in the WebMouse app.")
-        print(f"  👉 OR TYPE DIRECT LINK IN PHONE BROWSER:")
-        print(f"     {direct_url}")
+        print(f"  👉 FASTEST (NO PIN NEEDED):")
+        print(f"     Open your phone camera/WebMouse and SCAN THE QR CODE.")
+        print(f"     Phone will connect DIRECTLY without entering any PIN!")
         print(f"  👉 OR ENTER PIN MANUALLY:")
         print(f"     Laptop IP: {lan_ip}   |   PIN: {self.pairing_code}")
         print("=" * 64 + "\n")
@@ -1253,8 +1146,6 @@ class WebMouseServer:
             import http
             body_bytes = body if isinstance(body, bytes) else body.encode('utf-8')
             ct_header = content_type if ("charset" in content_type or not content_type.startswith("text/")) else f"{content_type}; charset=utf-8"
-            # NOTE: Do NOT add 'Connection' or 'Content-Length' headers here because websockets
-            # automatically inserts them in write_http_response. Overwriting them raises ValueError!
             resp_headers = [
                 ("Content-Type", ct_header),
                 ("Access-Control-Allow-Origin", "*"),
@@ -1287,42 +1178,36 @@ class WebMouseServer:
                 return send_http(204, "text/plain", "")
 
             # 2. Local Health & Pairing API endpoint for host browser (CORS allowed for localhost & local network)
-            is_html_client = "text/html" in header_map.get("accept", "").lower() and "application/json" not in header_map.get("accept", "").lower()
-            if req_path in ("/health", "/status", "/api/health", "/api/status", "/api/pairing-info", "/api/info", "/info") or (req_path == "/" and not is_html_client):
+            is_json_requested = "application/json" in header_map.get("accept", "").lower() or query_params.get("format", [""])[0] == "json"
+            if req_path in ("/health", "/status", "/api/health", "/api/status", "/api/pairing-info", "/api/info", "/info") or (req_path == "/" and is_json_requested):
                 temp_token = secrets.token_hex(16)
-                expires_at = int(time.time() + 3600) # 1 hour temporary token
+                expires_at = int(time.time() + 60) # 60 seconds one-time temporary token
                 self.qr_tokens[temp_token] = expires_at
 
-                all_ips = get_all_local_ips()
-                current_lan_ip = all_ips[0] if all_ips else "127.0.0.1"
-
-                pair_url = f"http://{current_lan_ip}:{self.port}/?pair={self.pairing_code}"
-
+                current_lan_ip = get_local_ip()
                 qr_payload = {
-                    "protocol": "webmouse",
                     "type": "webmouse_pair",
+                    "protocol": "webmouse",
                     "version": 2,
-                    "deviceName": socket.gethostname(),
                     "host": current_lan_ip,
+                    "ip": current_lan_ip,
                     "port": self.port,
-                    "transport": "ws",
                     "pairingCode": self.pairing_code,
-                    "code": self.pairing_code,
                     "token": temp_token,
-                    "expiresAt": expires_at,
-                    "pairUrl": pair_url
+                    "deviceName": socket.gethostname(),
+                    "expiresAt": expires_at
                 }
+
+                pair_url = f"http://{current_lan_ip}:{self.port}/pair?token={temp_token}&code={self.pairing_code}"
 
                 data = {
                     "status": "running",
                     "version": "2.0.0",
                     "deviceName": socket.gethostname(),
                     "lanIp": current_lan_ip,
-                    "allIps": all_ips,
                     "host": current_lan_ip,
                     "ip": current_lan_ip,
                     "port": self.port,
-                    "websocket": True,
                     "pairingAvailable": True,
                     "type": "host_pairing_info",
                     "token": temp_token,
@@ -1574,224 +1459,30 @@ class WebMouseServer:
                         with open(index_file, "rb") as f:
                             return send_http(200, "text/html", f.read())
 
-            # 5. Interactive Standalone Mobile Remote fallback (if dist not built): GET / or /health
-            if req_path in ("/", "/status", "/health", "/control", "/mouse"):
+            # 5. Status or root landing fallback (if dist not built): GET / or /health
+            if req_path in ("/", "/status", "/health"):
                 current_lan_ip = get_local_ip()
                 html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>WebMouse Mobile Controller</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebMouse Gateway</title>
   <style>
-    * {{ box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }}
-    body {{ background: #09090b; color: #fafafa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; touch-action: none; }}
-    header {{ padding: 12px 16px; background: #18181b; border-bottom: 1px solid #27272a; display: flex; align-items: center; justify-content: space-between; }}
-    .title {{ font-size: 15px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }}
-    .status-badge {{ font-size: 11px; padding: 4px 10px; border-radius: 999px; background: #064e3b; color: #34d399; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }}
-    .dot {{ width: 8px; height: 8px; border-radius: 50%; background: #34d399; }}
-    .offline {{ background: #4c0519; color: #fb7185; }}
-    .offline .dot {{ background: #fb7185; }}
-    
-    #trackpad {{ flex: 1; margin: 12px; background: #121215; border: 2px dashed #27272a; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; user-select: none; touch-action: none; }}
-    #trackpad:active {{ border-color: #6366f1; background: #181822; }}
-    .trackpad-hint {{ font-size: 13px; color: #71717a; pointer-events: none; text-align: center; }}
-    .trackpad-hint span {{ display: block; font-size: 11px; color: #52525b; margin-top: 4px; }}
-    
-    .btn-row {{ display: flex; gap: 8px; padding: 0 12px 8px; }}
-    button {{ flex: 1; padding: 14px; background: #27272a; border: 1px solid #3f3f46; color: #fafafa; border-radius: 14px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.1s; user-select: none; }}
-    button:active {{ background: #6366f1; border-color: #818cf8; }}
-    .btn-primary {{ background: #4f46e5; border-color: #6366f1; }}
-    .btn-primary:active {{ background: #4338ca; }}
-    
-    .quick-bar {{ display: flex; gap: 6px; padding: 0 12px 10px; overflow-x: auto; }}
-    .quick-bar button {{ flex: none; padding: 8px 12px; font-size: 12px; border-radius: 10px; }}
-    
-    .input-row {{ display: flex; gap: 8px; padding: 0 12px 12px; }}
-    .input-row input {{ flex: 1; padding: 10px 14px; background: #18181b; border: 1px solid #3f3f46; border-radius: 12px; color: #fff; font-size: 13px; outline: none; }}
-    .input-row button {{ flex: none; padding: 10px 16px; }}
+    body {{ background: #09090b; color: #fafafa; font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; text-align: center; }}
+    .card {{ background: #18181b; border: 1px solid #27272a; border-radius: 24px; padding: 32px; max-width: 380px; }}
+    h1 {{ font-size: 22px; margin-bottom: 8px; }}
+    p {{ color: #a1a1aa; font-size: 14px; margin-bottom: 16px; }}
+    .status {{ color: #34d399; font-weight: bold; font-size: 14px; }}
   </style>
 </head>
 <body>
-  <header>
-    <div class="title">
-      <span>🖱️ WebMouse</span>
-      <span style="font-size:11px;color:#a1a1aa;font-weight:normal;">{current_lan_ip}:{self.port}</span>
-    </div>
-    <div id="status" class="status-badge offline">
-      <span class="dot"></span>
-      <span id="status-text">Connecting...</span>
-    </div>
-  </header>
-
-  <div id="trackpad">
-    <div class="trackpad-hint">
-      👆 Touch & Drag to Move Mouse
-      <span>Tap: Left Click • Two Fingers: Right Click</span>
-    </div>
+  <div class="card">
+    <div style="font-size: 40px; margin-bottom: 10px;">🖱️</div>
+    <h1>WebMouse V1</h1>
+    <p>Windows Helper Server is running.</p>
+    <div class="status">🟢 Ready on {current_lan_ip}:{self.port}</div>
   </div>
-
-  <div class="btn-row">
-    <button id="btn-left">Left Click</button>
-    <button id="btn-scroll-up" style="flex:0.6;">▲</button>
-    <button id="btn-scroll-down" style="flex:0.6;">▼</button>
-    <button id="btn-right">Right Click</button>
-  </div>
-
-  <div class="input-row">
-    <input type="text" id="type-input" placeholder="Type text to send to PC...">
-    <button id="btn-send-text" class="btn-primary">Send</button>
-  </div>
-
-  <div class="quick-bar">
-    <button onclick="sendKey('enter')">Enter ⏎</button>
-    <button onclick="sendKey('backspace')">⌫ Back</button>
-    <button onclick="sendKey('space')">Space</button>
-    <button onclick="sendKey('esc')">Esc</button>
-    <button onclick="sendKey('pagedown')">Next Slide ❯</button>
-    <button onclick="sendKey('pageup')">❮ Prev</button>
-    <button onclick="sendKey('volumeup')">Vol +</button>
-    <button onclick="sendKey('volumedown')">Vol -</button>
-    <button onclick="sendKey('playpause')">⏯ Play</button>
-  </div>
-
-  <script>
-    const pin = new URLSearchParams(window.location.search).get('pair') || '{self.pairing_code}';
-    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.host || '{current_lan_ip}:{self.port}';
-    let ws = null;
-    let isConnected = false;
-
-    function connect() {{
-      try {{
-        ws = new WebSocket(`${{wsProto}}//${{wsHost}}`);
-        ws.onopen = () => {{
-          ws.send(JSON.stringify({{
-            type: 'auth',
-            code: pin,
-            token: pin,
-            deviceName: 'Mobile WebMouse'
-          }}));
-        }};
-        ws.onmessage = (e) => {{
-          try {{
-            const data = JSON.parse(e.data);
-            if (data.type === 'auth_result' && data.success) {{
-              isConnected = true;
-              document.getElementById('status').className = 'status-badge';
-              document.getElementById('status-text').innerText = 'Connected 🟢';
-            }}
-          }} catch(err) {{}}
-        }};
-        ws.onclose = () => {{
-          isConnected = false;
-          document.getElementById('status').className = 'status-badge offline';
-          document.getElementById('status-text').innerText = 'Reconnecting...';
-          setTimeout(connect, 2000);
-        }};
-        ws.onerror = () => {{
-          document.getElementById('status').className = 'status-badge offline';
-          document.getElementById('status-text').innerText = 'Offline';
-        }};
-      }} catch(e) {{
-        setTimeout(connect, 3000);
-      }}
-    }}
-    connect();
-
-    function send(obj) {{
-      if (ws && ws.readyState === WebSocket.OPEN) {{
-        ws.send(JSON.stringify(obj));
-      }}
-    }}
-
-    function sendKey(key) {{
-      send({{ type: 'keyboard_key', key: key }});
-    }}
-
-    // Trackpad multi-touch gestures
-    const pad = document.getElementById('trackpad');
-    let lastX = 0, lastY = 0;
-    let touchStartTime = 0;
-    let touchStartDist = 0;
-    let didMove = false;
-
-    pad.addEventListener('touchstart', (e) => {{
-      if (e.touches.length === 1) {{
-        lastX = e.touches[0].clientX;
-        lastY = e.touches[0].clientY;
-        touchStartTime = Date.now();
-        didMove = false;
-      }} else if (e.touches.length === 2) {{
-        lastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      }}
-    }}, {{ passive: false }});
-
-    pad.addEventListener('touchmove', (e) => {{
-      e.preventDefault();
-      if (e.touches.length === 1) {{
-        const x = e.touches[0].clientX;
-        const y = e.touches[0].clientY;
-        const dx = (x - lastX) * 1.5;
-        const dy = (y - lastY) * 1.5;
-        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {{
-          didMove = true;
-          send({{ type: 'mouse_move', dx: Math.round(dx), dy: Math.round(dy) }});
-        }}
-        lastX = x;
-        lastY = y;
-      }} else if (e.touches.length === 2) {{
-        const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        const dy = currentY - lastY;
-        if (Math.abs(dy) > 2) {{
-          send({{ type: 'mouse_scroll', dy: dy > 0 ? 30 : -30 }});
-        }}
-        lastY = currentY;
-      }}
-    }}, {{ passive: false }});
-
-    pad.addEventListener('touchend', (e) => {{
-      const elapsed = Date.now() - touchStartTime;
-      if (!didMove && elapsed < 250) {{
-        if (e.changedTouches.length === 1) {{
-          send({{ type: 'mouse_click', button: 'left' }});
-        }}
-      }}
-    }}, {{ passive: false }});
-
-    // Buttons
-    document.getElementById('btn-left').addEventListener('click', () => {{
-      send({{ type: 'mouse_click', button: 'left' }});
-    }});
-    document.getElementById('btn-right').addEventListener('click', () => {{
-      send({{ type: 'mouse_click', button: 'right' }});
-    }});
-    document.getElementById('btn-scroll-up').addEventListener('click', () => {{
-      send({{ type: 'mouse_scroll', dy: 60 }});
-    }});
-    document.getElementById('btn-scroll-down').addEventListener('click', () => {{
-      send({{ type: 'mouse_scroll', dy: -60 }});
-    }});
-
-    // Typing
-    const input = document.getElementById('type-input');
-    document.getElementById('btn-send-text').addEventListener('click', () => {{
-      const val = input.value;
-      if (val) {{
-        send({{ type: 'keyboard_text', text: val }});
-        input.value = '';
-      }}
-    }});
-    input.addEventListener('keydown', (e) => {{
-      if (e.key === 'Enter') {{
-        const val = input.value;
-        if (val) {{
-          send({{ type: 'keyboard_text', text: val }});
-          input.value = '';
-        }}
-      }}
-    }});
-  </script>
 </body>
 </html>"""
                 return send_http(200, "text/html", html)
@@ -1812,10 +1503,10 @@ class WebMouseServer:
         try:
             import time, secrets
             temp_token = secrets.token_hex(16)
-            expires_at = time.time() + 3600 # 1 hour temporary token
+            expires_at = time.time() + 60
             self.qr_tokens[temp_token] = expires_at
             
-            # Cleanup expired tokens
+            # Cleanup old tokens
             current_time = time.time()
             self.qr_tokens = {k: v for k, v in self.qr_tokens.items() if v > current_time}
 
@@ -1829,8 +1520,6 @@ class WebMouseServer:
                 "version": 2,
                 "token": temp_token,
                 "pairingToken": temp_token,
-                "code": self.pairing_code,
-                "pairingCode": self.pairing_code,
                 "expiresAt": int(expires_at)
             }))
         except Exception as e:
@@ -1853,39 +1542,32 @@ class WebMouseServer:
                 if msg_type in ("host_pairing_info", "request_qr_token", "get_pairing_info"):
                     import time, secrets
                     temp_token = secrets.token_hex(16)
-                    expires_at = int(time.time() + 3600)
+                    expires_at = int(time.time() + 60)
                     self.qr_tokens[temp_token] = expires_at
                     current_lan_ip = get_local_ip()
-                    pair_url = f"http://{current_lan_ip}:{self.port}/?pair={self.pairing_code}"
                     qr_payload = {
-                        "protocol": "webmouse",
                         "type": "webmouse_pair",
-                        "version": 2,
-                        "deviceName": socket.gethostname(),
+                        "version": 1,
                         "host": current_lan_ip,
                         "port": self.port,
-                        "transport": "ws",
-                        "pairingCode": self.pairing_code,
-                        "code": self.pairing_code,
                         "token": temp_token,
-                        "expiresAt": expires_at,
-                        "pairUrl": pair_url
+                        "expiresAt": expires_at
                     }
                     print(f"[DEBUG] helper connection: host browser requested pairing info via WebSocket")
-                    print(f"[DEBUG] QR generated: host={current_lan_ip}:{self.port}, code={self.pairing_code}, token={temp_token[:8]}...")
+                    print(f"[DEBUG] QR generated: host={current_lan_ip}:{self.port}, token={temp_token[:8]}..., expires_at={expires_at}")
+                    print(f"[DEBUG] QR payload: {json.dumps(qr_payload)}")
+                    print(f"[DEBUG] detected LAN IP: {current_lan_ip}")
                     await websocket.send(json.dumps({
                         "type": "host_pairing_info",
                         "host": current_lan_ip,
                         "ip": current_lan_ip,
                         "port": self.port,
-                        "version": 2,
+                        "version": 1,
                         "token": temp_token,
                         "pairingToken": temp_token,
                         "code": self.pairing_code,
-                        "pairingCode": self.pairing_code,
                         "expiresAt": expires_at,
-                        "qrPayload": qr_payload,
-                        "pairUrl": pair_url
+                        "qrPayload": qr_payload
                     }))
                     continue
 
@@ -1896,34 +1578,39 @@ class WebMouseServer:
                     device_name = str(data.get("deviceName", "Mobile Phone")).strip()
 
                     print(f"[DEBUG] phone pairing request from {client_addr}: device='{device_name}', has_token={bool(token)}, has_code={bool(code)}")
+                    print(f"[DEBUG] token validation: checking incoming credentials...")
 
                     is_authenticated = False
                     new_token = None
                     fail_reason = ""
 
-                    # Priority 1: Trusted persistent device token match
                     if token and token in self.trusted_tokens:
                         is_authenticated = True
                         print(f"[DEBUG] token validation: trusted device token matched! Reconnected '{device_name}' from {client_addr}")
-                    # Priority 2: QR temporary token match
-                    elif token and token in self.qr_tokens and self.qr_tokens[token] > time.time():
-                        is_authenticated = True
-                        import secrets
-                        new_token = secrets.token_hex(32)
-                        self.trusted_tokens[new_token] = {"device_name": device_name, "paired_at": str(time.time()), "method": "qr"}
-                        self._save_trusted_tokens()
-                        print(f"[DEBUG] token validation: valid temporary QR token! Issued persistent token for '{device_name}'")
-                    # Priority 3: 6-digit pairing code match (check both code field and token field in case client swapped them)
-                    elif (code and code == self.pairing_code) or (token and token == self.pairing_code):
+                    elif token and token in self.qr_tokens:
+                        import time
+                        if self.qr_tokens[token] > time.time():
+                            is_authenticated = True
+                            import secrets
+                            new_token = secrets.token_hex(32)
+                            self.trusted_tokens[new_token] = {"device_name": device_name, "paired_at": str(time.time()), "method": "qr"}
+                            self._save_trusted_tokens()
+                            del self.qr_tokens[token] # One-time use: invalid after successful pairing
+                            print(f"[DEBUG] token validation: valid 60s temporary QR token!")
+                            print(f"[DEBUG] successful pairing: generated persistent trusted token for '{device_name}'")
+                        else:
+                            fail_reason = "Expired temporary QR token"
+                            print(f"[DEBUG] token validation: {fail_reason}")
+                    elif code and code == self.pairing_code:
                         is_authenticated = True
                         import secrets
                         new_token = secrets.token_hex(32)
                         self.trusted_tokens[new_token] = {"device_name": device_name, "paired_at": str(time.time()), "method": "manual_code"}
                         self._save_trusted_tokens()
-                        print(f"[DEBUG] token validation: 6-digit pairing code matched! Issued persistent token for '{device_name}'")
+                        print(f"[DEBUG] token validation: 6-digit pairing code matched!")
+                        print(f"[DEBUG] successful pairing: generated persistent trusted token for '{device_name}'")
                     else:
-                        fail_reason = "Invalid pairing code or token"
-                        print(f"[DEBUG] token validation failed for {client_addr}: given code='{code}', token='{token[:8] if token else ''}...'")
+                        fail_reason = "Invalid token or incorrect pairing code"
                         print(f"[DEBUG] token validation: {fail_reason}")
 
                     print(f"[DEBUG] WebSocket authentication: client authenticated = {is_authenticated}")
@@ -2554,10 +2241,23 @@ async def main():
     asyncio.create_task(safe_watch_send_folder())
 
     try:
-        # PurePythonWebSocketServer seamlessly handles BOTH standard browser HTTP (GET /, /status, /web_dist)
-        # and WebSocket RFC 6455 upgrades on port 8765 without throwing 'invalid Connection header: keep-alive'.
-        server_runner = PurePythonWebSocketServer(server)
-        await server_runner.start()
+        if HAS_WEBSOCKETS_PKG:
+            async with websockets.serve(
+                server.handle_connection,
+                server.host,
+                server.port,
+                process_request=server.process_request,
+                ping_interval=20,
+                ping_timeout=20,
+                max_size=10_000_000
+            ):
+                print(f"[*] WebMouse Helper is ACTIVE and listening on port {server.port}.")
+                print("[*] Keep this Command Prompt window OPEN while using WebMouse.\n")
+                # Run forever
+                await asyncio.Future()
+        else:
+            server_runner = PurePythonWebSocketServer(server)
+            await server_runner.start()
     except OSError as e:
         err_str = str(e).lower()
         lan_ip = get_local_ip()

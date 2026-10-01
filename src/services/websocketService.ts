@@ -160,42 +160,20 @@ export class WebSocketClient {
     }
 
     let isConnectedOrClosed = false;
-    const connectTimeout = setTimeout(() => {
-      if (!isConnectedOrClosed && this.status === 'connecting') {
-        isConnectedOrClosed = true;
-        this.setStatus('error');
-        const reason = `Connection timeout: ${clean}:${defaultPort} did not respond within 5 seconds. Windows Firewall may be blocking port ${defaultPort}, or devices are on different networks.`;
-        this.addLog('err', reason);
-        if (this.onErrorDetails) {
-          this.onErrorDetails({
-            stage: 'timeout',
-            message: reason,
-            host: clean,
-            port: defaultPort,
-          });
-        }
-        try { this.socket?.close(); } catch (e) {}
-      }
-    }, 5000);
 
     try {
       this.socket = new WebSocket(wsUrl);
 
       this.socket.onopen = () => {
         isConnectedOrClosed = true;
-        clearTimeout(connectTimeout);
         this.addLog('sys', `Connected to ${wsUrl}. Sending authentication handshake...`);
         const codeToSend = (this.config.code?.trim() || (this.config.qrToken && this.config.qrToken.length <= 8 ? this.config.qrToken : '') || '').trim();
         const tokenToSend = this.config.qrToken || this.config.token || codeToSend;
 
         console.log('[WebMouse] helper connection: WebSocket opened to', wsUrl);
-        console.log('[WebMouse] WebSocket authentication: sending auth packet...', {
-          deviceName: this.deviceName || 'WebMouse Phone',
-          hasToken: Boolean(tokenToSend),
-          hasCode: Boolean(codeToSend)
-        });
+        console.log('[WebMouse] Sending authentication code:', codeToSend);
 
-        // Step 1: Send authentication handshake with token or 6-digit code
+        // Send standard authentication handshake with 6-digit code
         this.send({
           type: 'auth',
           code: codeToSend,
@@ -215,7 +193,6 @@ export class WebSocketClient {
 
       this.socket.onerror = (_err) => {
         isConnectedOrClosed = true;
-        clearTimeout(connectTimeout);
         let stage: 'mixed_content' | 'network' = 'network';
         let errHint = `Phone cannot reach Windows Helper at ${wsUrl}. Check that both devices are on the same Wi-Fi and that Windows Firewall allows WebMouse on the local network.`;
         if (isHttpsOrigin && wsUrl.startsWith('ws://')) {

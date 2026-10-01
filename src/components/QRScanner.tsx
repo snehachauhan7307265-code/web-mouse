@@ -650,8 +650,18 @@ export function QRScanner({ onScan, onClose, onManualPin }: QRScannerProps) {
             </button>
           </div>
 
+          {onManualPin && (
+            <button
+              type="button"
+              onClick={onManualPin}
+              className="w-full py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md"
+            >
+              <span>💻 IP Address & 6-Digit PIN दर्ज करें (Direct Connect)</span>
+            </button>
+          )}
+
           <p className="text-[11px] text-zinc-400 text-center">
-            लैपटॉप के CMD में दिख रहे QR कोड का फोटो लें या 6-अंकों का PIN दर्ज करें।
+            लैपटॉप के CMD में दिख रहे IP Address और 6-अंकों का PIN दर्ज करें या QR स्कैन करें।
           </p>
         </div>
       </div>

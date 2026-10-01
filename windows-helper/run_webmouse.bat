@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 title WebMouse V1 — Windows Helper Server [PORT 8765]
 color 0A
 
-:: Ensure working directory is the script folder
+:: Ensure working directory is this script folder
 cd /d "%~dp0"
 
 echo ================================================================
@@ -29,7 +29,6 @@ if %errorlevel% equ 0 (
         echo Please install Python 3.8+ from: https://www.python.org/downloads/
         echo (Make sure to check the box "Add Python to PATH" during installation)
         echo.
-        echo Keeping window open so you can read this message.
         echo ================================================================
         pause
         goto END_HANG
@@ -42,33 +41,27 @@ echo.
 
 :: 2. Ensure webmouse_server.py is present
 if not exist "%~dp0webmouse_server.py" (
-    echo [*] Locating webmouse_server.py...
-    if exist "%~dp0windows-helper\webmouse_server.py" (
-        copy /y "%~dp0windows-helper\webmouse_server.py" "%~dp0webmouse_server.py" >nul
-    )
-)
-
-if not exist "%~dp0webmouse_server.py" (
-    echo [*] Downloading latest webmouse_server.py...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://ais-dev-6o3nmbyzug3q657ngky2wo-972641513496.asia-southeast1.run.app/webmouse_server.py' -OutFile '%~dp0webmouse_server.py' -TimeoutSec 15 } catch { (New-Object Net.WebClient).DownloadFile('https://ais-dev-6o3nmbyzug3q657ngky2wo-972641513496.asia-southeast1.run.app/webmouse_server.py', '%~dp0webmouse_server.py') }" >nul 2>&1
-)
-
-if not exist "%~dp0webmouse_server.py" (
-    echo [ERROR] Could not find or download webmouse_server.py.
+    echo [ERROR] Could not find webmouse_server.py.
     echo Please ensure webmouse_server.py is in the same folder as this bat file.
     echo.
     pause
     goto END_HANG
 )
 
-:: 3. Check dependencies
+:: 3. Check and install dependencies
 %PYTHON_CMD% -c "import websockets" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [*] Installing 'websockets' library (takes ~5 seconds)...
+    echo [*] Installing required 'websockets' library (takes ~5 seconds)...
     %PYTHON_CMD% -m pip install websockets
 )
 
-:: 4. Run server in persistent loop - will NEVER close
+%PYTHON_CMD% -c "import pyautogui" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [*] Installing 'pyautogui' and 'pyperclip' for Windows mouse control...
+    %PYTHON_CMD% -m pip install pyautogui pyperclip
+)
+
+:: 4. Run server in persistent loop - will NEVER close accidentally
 :RUN_SERVER_LOOP
 echo.
 echo ================================================================

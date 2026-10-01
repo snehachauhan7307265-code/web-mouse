@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Laptop, ArrowRight, CheckCircle2, 
-  AlertTriangle, AlertCircle, RefreshCw, QrCode, Scan, 
-  Download, Sparkles, Smartphone, Terminal, HelpCircle, ExternalLink, WifiOff
+  AlertCircle, RefreshCw, QrCode, Scan, 
+  Download, Smartphone, Terminal, HelpCircle
 } from 'lucide-react';
 import { ConnectionConfig, ConnectionStatus, ConnectedDeviceInfo } from '../types';
 import { QRScanner } from './QRScanner';
@@ -44,114 +44,12 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   const [code, setCode] = useState(config.code || '');
   const [autoReconnect, setAutoReconnect] = useState(config.autoReconnect ?? true);
 
-  const [helperState, setHelperState] = useState<'checking' | 'detected' | 'not_found'>('checking');
-  const [detectedHelper, setDetectedHelper] = useState<{
-    deviceName: string;
-    lanIp: string;
-    port: number;
-    token?: string;
-    code?: string;
-    version?: string;
-  } | null>(null);
-
-  const [isDownloading, setIsDownloading] = useState(false);
   const [connectingTarget, setConnectingTarget] = useState<{
     host: string;
     port: number;
     code?: string;
     name?: string;
-    pairUrl?: string;
   } | null>(null);
-
-  // Proactive helper detection via HTTP / Health & WebSocket
-  const probeLocalHelper = async () => {
-    setHelperState('checking');
-    let found = false;
-
-    // 1. Try local health endpoints
-    const endpoints = [
-      'http://127.0.0.1:8765/health',
-      'http://localhost:8765/health',
-      'http://127.0.0.1:8765/api/pairing-info',
-      'http://localhost:8765/api/pairing-info'
-    ];
-
-    for (const ep of endpoints) {
-      if (found) break;
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1200);
-        const res = await fetch(ep, { signal: controller.signal, mode: 'cors' });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-          const data = await res.json();
-          const lanIp = (data.lanIp || data.host || data.ip || '').trim();
-          if (lanIp && lanIp !== 'localhost' && !lanIp.startsWith('127.')) {
-            found = true;
-            setDetectedHelper({
-              deviceName: data.deviceName || 'My Laptop',
-              lanIp,
-              port: parseInt(data.port, 10) || 8765,
-              token: data.pairingToken || data.token,
-              code: data.code || data.pairingCode,
-              version: data.version || '2.0.0'
-            });
-            setHost(lanIp);
-            setPort((data.port || 8765).toString());
-            if (data.code) setCode(data.code);
-            setHelperState('detected');
-            return;
-          }
-        }
-      } catch (e) {
-        // Continue trying next endpoint
-      }
-    }
-
-    // 2. Try WebSocket Probe if HTTP was blocked by browser sandbox
-    if (!found) {
-      try {
-        const ws = new WebSocket('ws://127.0.0.1:8765');
-        const wsTimeout = setTimeout(() => {
-          try { ws.close(); } catch (e) {}
-          if (!found) setHelperState('not_found');
-        }, 1500);
-
-        ws.onopen = () => {
-          ws.send(JSON.stringify({ type: 'host_pairing_info' }));
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'host_pairing_info' || data.type === 'server_info') {
-              found = true;
-              clearTimeout(wsTimeout);
-              const lanIp = (data.host || data.lanIp || data.ip || '').trim();
-              setDetectedHelper({
-                deviceName: data.deviceName || 'My Laptop',
-                lanIp: lanIp || '127.0.0.1',
-                port: parseInt(data.port, 10) || 8765,
-                token: data.pairingToken || data.token,
-                code: data.code || data.pairingCode,
-                version: data.version || '2.0.0'
-              });
-              if (lanIp && !lanIp.startsWith('127.')) setHost(lanIp);
-              setHelperState('detected');
-              ws.close();
-            }
-          } catch (e) {}
-        };
-
-        ws.onerror = () => {
-          clearTimeout(wsTimeout);
-          if (!found) setHelperState('not_found');
-        };
-      } catch (err) {
-        if (!found) setHelperState('not_found');
-      }
-    }
-  };
 
   useEffect(() => {
     if (isOpen) {
@@ -168,18 +66,17 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         setActiveTab('helper');
       } else {
         setActiveTab('pc_connect');
-        probeLocalHelper();
       }
     }
   }, [isOpen, initialView, config.host, config.port, config.code, config.autoReconnect]);
 
-  // When connection succeeds while modal is tracking a target
+  // When connection succeeds while modal is open, auto-close
   useEffect(() => {
     if (status === 'connected' && connectingTarget) {
       const timer = setTimeout(() => {
         setConnectingTarget(null);
         onClose();
-      }, 1200);
+      }, 1000);
       return () => clearTimeout(timer);
     }
   }, [status, connectingTarget, onClose]);
@@ -198,8 +95,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       host: cleanHost,
       port: cleanPort,
       code: cleanCode,
-      name: detectedHelper?.deviceName || config.lastComputerName || 'Windows PC',
-      pairUrl: `http://${cleanHost}:${cleanPort}/?pair=${cleanCode}`,
+      name: config.lastComputerName || 'Windows PC',
     });
 
     onSaveAndConnect({
@@ -207,7 +103,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       port: cleanPort,
       code: cleanCode,
       token: config.token,
-      lastComputerName: config.lastComputerName || detectedHelper?.deviceName || 'Windows PC',
+      lastComputerName: config.lastComputerName || 'Windows PC',
       autoReconnect,
     });
   };
@@ -215,12 +111,11 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
   const handleScan = (data: any) => {
     setActiveTab('pc_connect');
     if (!data) return;
-    const scannedHost = (data.host || (data.receiverId ? 'receiver_local' : '') || '').trim();
+    const scannedHost = (data.host || '').trim();
     const scannedPort = parseInt(data.port, 10) || 8765;
     const scannedCode = (data.code || data.pin || data.pairingCode || (data.token && String(data.token).length <= 8 ? data.token : '') || '').trim();
-    const scannedToken = (data.token || data.qrToken || '').trim();
-    const scannedName = data.name || data.deviceName || data.computerName || 'Windows PC';
-    const pairUrl = data.pairUrl || (scannedHost ? `http://${scannedHost}:${scannedPort}/?pair=${scannedCode || scannedToken}` : '');
+    const scannedToken = (data.token || '').trim();
+    const scannedName = data.name || data.deviceName || 'Windows PC';
 
     if (scannedHost) setHost(scannedHost);
     if (scannedPort) setPort(scannedPort.toString());
@@ -232,40 +127,22 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
         port: scannedPort,
         code: scannedCode || scannedToken,
         name: scannedName,
-        pairUrl,
       });
 
       onSaveAndConnect({
         host: scannedHost,
         port: scannedPort,
         code: scannedCode || scannedToken,
-        qrToken: scannedToken,
-        token: undefined,
+        token: scannedToken || scannedCode,
         lastComputerName: scannedName,
         autoReconnect: true,
       });
     }
   };
 
-  const handleDownloadInstaller = () => {
-    setIsDownloading(true);
-    const link = document.createElement('a');
-    link.href = '/WebMouseHelperSetup.bat';
-    link.download = 'WebMouseHelperSetup.bat';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    setTimeout(() => {
-      setIsDownloading(false);
-      probeLocalHelper();
-    }, 4000);
-  };
-
   const isConnected = status === 'connected';
   const isConnecting = status === 'connecting';
-  const computerDisplayName = config.lastComputerName || detectedHelper?.deviceName || 'Windows PC';
-  const isHttpsOrigin = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  const computerDisplayName = config.lastComputerName || 'Windows PC';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
@@ -281,11 +158,11 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
       {/* Show Laptop QR Overlay */}
       {activeTab === 'qr_host' && (
         <QRCodePairing 
-          helperStatus={helperState === 'detected' ? 'connected' : helperState === 'checking' ? 'checking' : 'disconnected'}
-          host={detectedHelper?.lanIp || host || config.host || ''} 
-          port={detectedHelper?.port || parseInt(port, 10) || config.port || 8765} 
-          token={detectedHelper?.token || detectedHelper?.code || code || config.code || ''} 
-          onRefresh={probeLocalHelper}
+          helperStatus={isConnected ? 'connected' : 'disconnected'}
+          host={host || config.host || ''} 
+          port={parseInt(port, 10) || config.port || 8765} 
+          token={code || config.code || ''} 
+          onRefresh={() => {}}
           onClose={() => setActiveTab('pc_connect')} 
           onSwitchToScanner={() => setActiveTab('scanner')}
           onOpenHelperGuide={onOpenHelperGuide}
@@ -305,15 +182,15 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
-                <span>Connect to PC / Laptop</span>
+                <span>Connect to Laptop / PC</span>
                 {isConnected && (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-semibold">
-                    Connected
+                    Connected 🟢
                   </span>
                 )}
               </h2>
               <p className="text-xs text-zinc-400">
-                Control mouse, keyboard, and presentation wirelessly
+                WebMouse Local Wi-Fi Connection
               </p>
             </div>
           </div>
@@ -326,7 +203,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Navigation (Prominent, High-Visibility) */}
+        {/* Tab Navigation */}
         <div className="flex border-b border-zinc-800 bg-zinc-950/40 p-1.5 gap-1 text-xs">
           <button
             id="tab-pc-connect"
@@ -339,7 +216,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             }`}
           >
             <Laptop className="w-4 h-4" />
-            <span>💻 PC Connect</span>
+            <span>💻 Connection</span>
           </button>
 
           <button
@@ -353,7 +230,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             }`}
           >
             <Scan className="w-4 h-4 text-emerald-400" />
-            <span>📷 QR Scanner</span>
+            <span>📷 Scan QR</span>
           </button>
 
           <button
@@ -381,13 +258,13 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             }`}
           >
             <Download className="w-4 h-4 text-amber-400" />
-            <span>📥 Helper</span>
+            <span>📥 Helper Files</span>
           </button>
         </div>
 
         {/* Modal Scrollable Body */}
         <div className="p-5 sm:p-6 space-y-4 overflow-y-auto">
-          {/* Active Connection Banner if connected */}
+          {/* Active Connection Banner */}
           {isConnected && (
             <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -411,22 +288,18 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
             </div>
           )}
 
-          {/* Connection Error / Connecting Pipeline Banner */}
-          {connectingTarget && (
-            <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 space-y-3 animate-in fade-in duration-150">
+          {/* Connecting Feedback Banner */}
+          {connectingTarget && !isConnected && (
+            <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 space-y-2 animate-in fade-in duration-150">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  {status === 'connected' ? (
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                  ) : status === 'connecting' || status === 'reconnecting' ? (
+                <div className="flex items-center gap-2">
+                  {status === 'connecting' || status === 'reconnecting' ? (
                     <RefreshCw className="w-4 h-4 text-indigo-400 animate-spin" />
                   ) : (
                     <AlertCircle className="w-4 h-4 text-rose-400" />
                   )}
                   <span className="text-xs font-bold text-white">
-                    {status === 'connected'
-                      ? 'Connected Successfully!'
-                      : status === 'connecting' || status === 'reconnecting'
+                    {status === 'connecting' || status === 'reconnecting'
                       ? `Connecting to ${connectingTarget.host}:${connectingTarget.port}...`
                       : 'Connection Failed'}
                   </span>
@@ -440,58 +313,19 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                 </button>
               </div>
 
-              {/* Status Message and Diagnostics */}
               {(status === 'error' || status === 'auth_failed') && (
-                <div className="p-3 bg-amber-950/30 border border-amber-500/30 rounded-xl space-y-2 text-xs">
-                  <div className="flex items-center gap-1.5 text-amber-300 font-semibold">
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                    <span>PC se connect nahi ho paya:</span>
-                  </div>
-
-                  {isHttpsOrigin && (
-                    <div className="space-y-1.5 pt-1">
-                      <p className="text-[11px] text-zinc-300 leading-snug">
-                        💡 <strong>Direct Phone Link:</strong> Phone browser HTTPS se local IP WebSocket ko block kar sakta hai. Neeche button tap karein (ye direct phone par chalega):
-                      </p>
-                      <a
-                        href={connectingTarget.pairUrl || `http://${connectingTarget.host}:${connectingTarget.port}/?pair=${connectingTarget.code || ''}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center justify-center gap-1.5 w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Open Direct Link (http://{connectingTarget.host}:{connectingTarget.port}/)</span>
-                      </a>
-                    </div>
-                  )}
-
-                  <div className="text-[11px] text-zinc-400 space-y-0.5 pt-1">
-                    <p>• Check karein ki Laptop aur Phone dono ek hi Wi-Fi router ya Hotspot par hain.</p>
-                    <p>• Laptop par <code>run_webmouse.bat</code> chala hona chahiye.</p>
-                  </div>
-
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => handleConnect()}
-                      className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-xs transition-colors"
-                    >
-                      🔄 Retry
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('scanner')}
-                      className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold rounded-lg text-xs transition-colors"
-                    >
-                      📷 Scan QR Again
-                    </button>
-                  </div>
+                <div className="text-[11px] text-zinc-400 space-y-1 pt-1">
+                  <p className="text-rose-300 font-medium">
+                    {status === 'auth_failed' ? '❌ Invalid 6-digit PIN code.' : '❌ Could not reach laptop helper.'}
+                  </p>
+                  <p>• Verify that <code>run_webmouse.bat</code> is running in the laptop CMD window.</p>
+                  <p>• Verify that phone and laptop are on the same Wi-Fi / Hotspot.</p>
                 </div>
               )}
             </div>
           )}
 
-          {/* TAB 1: PC CONNECT (Direct IP & PIN) */}
+          {/* TAB 1: PC CONNECT (Standard IP & 6-Digit PIN) */}
           {activeTab === 'pc_connect' && (
             <div className="space-y-4">
               {/* Quick Actions (Scan QR & Show QR Buttons) */}
@@ -507,7 +341,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   </div>
                   <div>
                     <div className="font-bold text-xs">📷 Scan QR Code</div>
-                    <div className="text-[10px] text-emerald-100">Camera se scan karein</div>
+                    <div className="text-[10px] text-emerald-100">Scan from Laptop screen</div>
                   </div>
                 </button>
 
@@ -521,44 +355,36 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                     <QrCode className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <div className="font-bold text-xs">🖥️ Show Laptop QR</div>
-                    <div className="text-[10px] text-indigo-100">Screen par code dikhayein</div>
+                    <div className="font-bold text-xs">🖥️ Laptop Screen QR</div>
+                    <div className="text-[10px] text-indigo-100">Display QR code</div>
                   </div>
                 </button>
               </div>
 
-              {/* Direct PC Connection Form */}
+              {/* Standard Connection Form */}
               <div className="p-4 bg-zinc-950/80 rounded-2xl border border-zinc-800 space-y-3.5">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <Laptop className="w-4 h-4 text-indigo-400" />
-                    <span>PC IP Address &amp; PIN Connection</span>
-                  </h3>
-                  {helperState === 'detected' && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Helper Detected
-                    </span>
-                  )}
-                </div>
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <Laptop className="w-4 h-4 text-indigo-400" />
+                  <span>Windows Helper Connection</span>
+                </h3>
 
                 <form onSubmit={handleConnect} className="space-y-3">
                   <div className="grid grid-cols-3 gap-2">
                     <div className="col-span-2 space-y-1">
                       <label className="text-[11px] font-semibold text-zinc-300">
-                        PC / Laptop IP Address
+                        Laptop Wi-Fi IP Address
                       </label>
                       <input
                         id="input-pc-ip"
                         type="text"
                         value={host}
                         onChange={(e) => setHost(e.target.value)}
-                        placeholder="e.g. 192.168.1.5 or localhost"
+                        placeholder="e.g. 192.168.1.15"
                         className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500 transition-colors"
                         required
                       />
                       <p className="text-[10px] text-zinc-500">
-                        Laptop me <code>run_webmouse.bat</code> chalane par IP green color me dikhegi.
+                        Shown in green text in laptop CMD window.
                       </p>
                     </div>
 
@@ -581,8 +407,8 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
 
                   <div className="space-y-1">
                     <label className="text-[11px] font-semibold text-zinc-300 flex items-center justify-between">
-                      <span>6-Digit Pairing PIN (Optional)</span>
-                      <span className="text-[10px] text-zinc-500 font-normal">CMD window me dikhega</span>
+                      <span>6-Digit Pairing Code</span>
+                      <span className="text-[10px] text-zinc-500 font-normal">Shown in CMD banner</span>
                     </label>
                     <input
                       id="input-pc-code"
@@ -590,12 +416,13 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                       maxLength={6}
                       value={code}
                       onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                      placeholder="e.g. 582914"
+                      placeholder="e.g. 123456"
                       className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono tracking-widest text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                      required
                     />
                   </div>
 
-                  <div className="flex items-center justify-between pt-1">
+                  <div className="pt-1">
                     <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
                       <input
                         type="checkbox"
@@ -603,119 +430,73 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                         onChange={(e) => setAutoReconnect(e.target.checked)}
                         className="w-4 h-4 accent-indigo-500 rounded bg-zinc-900 border-zinc-700"
                       />
-                      <span>Auto-reconnect on next open</span>
+                      <span>Remember this computer &amp; auto-reconnect</span>
                     </label>
-
-                    <button
-                      type="button"
-                      onClick={probeLocalHelper}
-                      className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${helperState === 'checking' ? 'animate-spin' : ''}`} />
-                      <span>Detect PC</span>
-                    </button>
                   </div>
 
                   <button
                     id="btn-submit-pc-connect"
                     type="submit"
-                    disabled={isConnecting || !host.trim()}
+                    disabled={isConnecting || !host.trim() || !code.trim()}
                     className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-400 hover:to-blue-500 active:scale-[0.98] text-white font-bold text-xs transition-all shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {isConnecting ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Connecting to PC...</span>
+                        <span>Connecting to Laptop...</span>
                       </>
                     ) : (
                       <>
-                        <span>⚡ Connect to PC</span>
+                        <span>⚡ Connect</span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}
                   </button>
                 </form>
-
-                {/* Direct Phone Browser Link */}
-                {host.trim() && (
-                  <div className="pt-2 border-t border-zinc-800/80">
-                    <a
-                      href={`http://${host.trim()}:${port.trim() || '8765'}/${code.trim() ? `?pair=${code.trim()}` : ''}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center justify-between p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-xs text-zinc-300 hover:text-white transition-colors group"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Smartphone className="w-4 h-4 text-emerald-400" />
-                        <span>Open Direct Link on Mobile Browser</span>
-                      </span>
-                      <ExternalLink className="w-3.5 h-3.5 text-zinc-500 group-hover:text-white" />
-                    </a>
-                  </div>
-                )}
               </div>
             </div>
           )}
 
-          {/* TAB 4: WINDOWS HELPER (Setup & Download) */}
+          {/* TAB 4: HELPER FILES (run_webmouse.bat & webmouse_server.py) */}
           {activeTab === 'helper' && (
             <div className="space-y-4">
               <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                    <Laptop className="w-4 h-4 text-indigo-400" />
-                    Windows Helper Status
-                  </span>
-                  {helperState === 'detected' ? (
-                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Running 🟢
-                    </span>
-                  ) : helperState === 'checking' ? (
-                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                      Checking...
-                    </span>
-                  ) : (
-                    <span className="text-[11px] text-zinc-400">Offline / Not detected</span>
-                  )}
-                </div>
+                <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Laptop className="w-4 h-4 text-indigo-400" />
+                  Windows Helper Files
+                </span>
 
                 <p className="text-xs text-zinc-300 leading-relaxed">
-                  WebMouse ko apne Laptop ya PC se wirelessly jodne ke liye Windows par Helper software chalana hota hai. Ye mouse, keyboard, aur screen share control enable karta hai.
+                  WebMouse requires the Windows Helper script running in Command Prompt on your PC.
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                  <button
-                    id="btn-install-helper-batch"
-                    type="button"
-                    onClick={handleDownloadInstaller}
-                    disabled={isDownloading}
-                    className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition-all disabled:opacity-50"
+                  <a
+                    href="/run_webmouse.bat"
+                    download="run_webmouse.bat"
+                    className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition-all text-center"
                   >
                     <Download className="w-4 h-4" />
-                    <span>{isDownloading ? 'Downloading...' : '1-Click Setup (Setup.bat)'}</span>
-                  </button>
+                    <span>Download run_webmouse.bat</span>
+                  </a>
 
                   <a
                     href="/WebMouse-Windows.zip"
                     download="WebMouse-Windows.zip"
                     className="py-2.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-semibold text-xs border border-zinc-700 flex items-center justify-center gap-2 transition-colors text-center"
                   >
-                    <Download className="w-4 h-4 text-emerald-400" />
-                    <span>Download Portable ZIP</span>
+                    <Download className="w-4 h-4 text-indigo-400" />
+                    <span>Download All (ZIP)</span>
                   </a>
                 </div>
               </div>
 
-              {/* Step-by-Step Instructions */}
               <div className="p-4 bg-zinc-950/60 rounded-2xl border border-zinc-800 space-y-2 text-xs">
-                <h4 className="font-bold text-zinc-200">Kese shuru karein (Quick Steps):</h4>
+                <h4 className="font-bold text-zinc-200">How to run:</h4>
                 <ol className="list-decimal list-inside space-y-1.5 text-zinc-300 text-[11px] leading-relaxed">
-                  <li>Laptop me <strong>WebMouseHelperSetup.bat</strong> download karke Double-Click karein.</li>
-                  <li>Setup apne aap Python aur zaroori libraries install kar dega.</li>
-                  <li>Black CMD window me green text me Laptop ki <strong>IP Address</strong> aur <strong>6-digit PIN</strong> dikhegi.</li>
-                  <li>Phone se <strong>"PC Connect"</strong> tab me IP daalein ya <strong>"Scan QR"</strong> se camera se scan karein!</li>
+                  <li>Download and double-click <strong>run_webmouse.bat</strong> on your Windows PC.</li>
+                  <li>A black CMD window opens showing your Laptop IP and 6-digit Pairing Code in green.</li>
+                  <li>Scan the QR code with phone or type the IP and PIN in the Connection tab!</li>
                 </ol>
               </div>
 
@@ -726,16 +507,8 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({
                   className="text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1"
                 >
                   <HelpCircle className="w-3.5 h-3.5" />
-                  <span>Full Troubleshooting Guide</span>
+                  <span>Troubleshooting Guide</span>
                 </button>
-
-                <a
-                  href="/Uninstall-WebMouseHelper.bat"
-                  download="Uninstall-WebMouseHelper.bat"
-                  className="text-zinc-500 hover:text-rose-400 text-[11px] transition-colors"
-                >
-                  Uninstall Helper
-                </a>
               </div>
             </div>
           )}
