@@ -24,14 +24,19 @@ if %errorlevel% equ 0 (
     if %errorlevel% equ 0 (
         set PYTHON_CMD=py
     ) else (
-        echo [ERROR] Python is not installed or not in PATH!
-        echo.
-        echo Please install Python 3.8+ from: https://www.python.org/downloads/
-        echo (Make sure to check the box "Add Python to PATH" during installation)
-        echo.
-        echo ================================================================
-        pause
-        goto END_HANG
+        python3 --version >nul 2>&1
+        if %errorlevel% equ 0 (
+            set PYTHON_CMD=python3
+        ) else (
+            echo [ERROR] Python is not installed or not in PATH!
+            echo.
+            echo Please install Python 3.8+ from: https://www.python.org/downloads/
+            echo (Make sure to check the box "Add Python to PATH" during installation)
+            echo.
+            echo ================================================================
+            pause
+            goto END_HANG
+        )
     )
 )
 
@@ -41,8 +46,8 @@ echo.
 
 :: 2. Ensure webmouse_server.py is present
 if not exist "%~dp0webmouse_server.py" (
-    echo [ERROR] Could not find webmouse_server.py.
-    echo Please ensure webmouse_server.py is in the same folder as this bat file.
+    echo [ERROR] Could not find webmouse_server.py in this directory.
+    echo Please make sure webmouse_server.py and this file are in the same folder.
     echo.
     pause
     goto END_HANG

@@ -64,20 +64,56 @@ const getInitialConnectionConfig = (): ConnectionConfig => {
 
   let host = '';
   let port = 8765;
+  let code = '';
 
-  if (envWsUrl) {
+  if (typeof window !== 'undefined') {
     try {
-      const url = new URL(envWsUrl.startsWith('ws') ? envWsUrl : `ws://${envWsUrl}`);
-      host = url.hostname;
-      if (url.port) port = parseInt(url.port, 10);
-    } catch {
-      host = envWsUrl;
-    }
-  } else if (envHost) {
-    host = envHost;
+      const params = new URLSearchParams(window.location.search);
+      const urlHost = params.get('host') || params.get('ip');
+      const urlPort = params.get('port');
+      const urlCode = params.get('pair') || params.get('code') || params.get('pin');
+
+      if (urlHost) {
+        host = urlHost.trim();
+      } else if (
+        window.location.hostname &&
+        window.location.hostname !== 'localhost' &&
+        window.location.hostname !== '127.0.0.1' &&
+        !window.location.hostname.includes('.run.app') &&
+        !window.location.hostname.includes('.vercel.app')
+      ) {
+        host = window.location.hostname;
+      }
+
+      if (urlPort) {
+        const p = parseInt(urlPort, 10);
+        if (!isNaN(p)) port = p;
+      } else if (window.location.port) {
+        const p = parseInt(window.location.port, 10);
+        if (!isNaN(p)) port = p;
+      }
+
+      if (urlCode) {
+        code = urlCode.trim();
+      }
+    } catch {}
   }
 
-  if (envPort) {
+  if (!host) {
+    if (envWsUrl) {
+      try {
+        const url = new URL(envWsUrl.startsWith('ws') ? envWsUrl : `ws://${envWsUrl}`);
+        host = url.hostname;
+        if (url.port) port = parseInt(url.port, 10);
+      } catch {
+        host = envWsUrl;
+      }
+    } else if (envHost) {
+      host = envHost;
+    }
+  }
+
+  if (envPort && port === 8765) {
     const parsed = parseInt(envPort, 10);
     if (!isNaN(parsed)) port = parsed;
   }
@@ -85,7 +121,7 @@ const getInitialConnectionConfig = (): ConnectionConfig => {
   return {
     host,
     port,
-    code: '',
+    code,
     autoReconnect: true,
   };
 };
@@ -582,6 +618,8 @@ export default function App() {
           deviceInfo={deviceInfo}
           activeDevice={activeDevice}
           latencyMs={latencyMs}
+          config={config}
+          onSaveAndConnect={handleConnect}
           onNavigate={(area, mode) => handleNavigate(area, mode)}
           onOpenDeviceSelector={() => setIsProfilesModalOpen(true)}
           onOpenAddDevice={() => openConnectionModal('scanner')}

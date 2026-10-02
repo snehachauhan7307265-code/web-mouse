@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Laptop, 
   Tv, 
@@ -15,9 +15,16 @@ import {
   ChevronRight,
   Wifi,
   Sparkles,
-  Sliders
+  Sliders,
+  ArrowRight,
+  QrCode,
+  Scan,
+  Download,
+  AlertTriangle,
+  ExternalLink,
+  RefreshCw
 } from 'lucide-react';
-import { Device, DeviceType, ConnectionStatus as ConnectionStatusType, ConnectedDeviceInfo } from '../../types';
+import { Device, DeviceType, ConnectionStatus as ConnectionStatusType, ConnectedDeviceInfo, ConnectionConfig } from '../../types';
 import { ConnectionStatus } from '../ConnectionStatus';
 
 interface HomeViewProps {
@@ -25,6 +32,8 @@ interface HomeViewProps {
   deviceInfo: ConnectedDeviceInfo | null;
   activeDevice: Device | null;
   latencyMs?: number;
+  config?: ConnectionConfig;
+  onSaveAndConnect?: (config: ConnectionConfig) => void;
   onNavigate: (tab: 'home' | 'control' | 'share' | 'ai' | 'devices', controlMode?: 'mouse' | 'keyboard' | 'media' | 'presentation' | 'tv_remote' | 'projector' | 'custom') => void;
   onOpenDeviceSelector: () => void;
   onOpenAddDevice: () => void;
@@ -38,6 +47,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
   deviceInfo,
   activeDevice,
   latencyMs,
+  config,
+  onSaveAndConnect,
   onNavigate,
   onOpenDeviceSelector,
   onOpenAddDevice,
@@ -46,8 +57,41 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onTriggerVoice,
 }) => {
   const isConnected = status === 'connected';
+  const isConnecting = status === 'connecting' || status === 'reconnecting';
   const deviceName = activeDevice?.name || deviceInfo?.computerName || 'My Laptop';
   const deviceType: DeviceType = activeDevice?.type || deviceInfo?.deviceType || 'windows';
+
+  const [directIp, setDirectIp] = useState(config?.host || '');
+  const [directPort, setDirectPort] = useState(config?.port ? config.port.toString() : '8765');
+  const [directPin, setDirectPin] = useState(config?.code || '');
+
+  useEffect(() => {
+    if (config?.host) setDirectIp(config.host);
+    if (config?.port) setDirectPort(config.port.toString());
+    if (config?.code) setDirectPin(config.code);
+  }, [config?.host, config?.port, config?.code]);
+
+  const handleDirectSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanHost = directIp.trim();
+    const cleanPort = parseInt(directPort, 10) || 8765;
+    const cleanCode = directPin.trim();
+
+    if (!cleanHost) return;
+
+    if (onSaveAndConnect) {
+      onSaveAndConnect({
+        host: cleanHost,
+        port: cleanPort,
+        code: cleanCode,
+        token: config?.token,
+        lastComputerName: config?.lastComputerName || 'Windows PC',
+        autoReconnect: true,
+      });
+    } else if (onConnect) {
+      onConnect();
+    }
+  };
 
   const getDeviceIcon = (type: DeviceType) => {
     switch (type) {
@@ -128,33 +172,116 @@ export const HomeView: React.FC<HomeViewProps> = ({
               </button>
             </>
           ) : (
-            <div className="flex flex-col w-full gap-2.5">
-              <div className="flex flex-col sm:flex-row w-full gap-2.5">
-                <button
-                  id="btn-home-connect-device"
-                  onClick={() => {
-                    if (onOpenConnectionModal) onOpenConnectionModal();
-                    else if (onConnect) onConnect();
-                  }}
-                  className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-[0.98] text-white text-xs font-bold shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2"
-                >
-                  <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                  <span>💻 Connect to PC (Enter IP &amp; PIN)</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+            <div className="flex flex-col w-full gap-3 pt-1">
+              {/* Direct IP and PIN form */}
+              <form onSubmit={handleDirectSubmit} className="space-y-3 bg-zinc-950/70 p-3.5 sm:p-4 rounded-xl border border-zinc-800/80">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div className="sm:col-span-2 space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-300 flex items-center justify-between">
+                      <span>Local IP Address (Laptop CMD me dikhega)</span>
+                      <span className="text-[10px] text-emerald-400 font-mono">Wi-Fi IP</span>
+                    </label>
+                    <input
+                      id="home-input-ip"
+                      type="text"
+                      value={directIp}
+                      onChange={(e) => setDirectIp(e.target.value)}
+                      placeholder="Enter the IP shown in the CMD window (e.g., 192.168.1.15)"
+                      className="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                      required
+                    />
+                    <p className="text-[10px] text-zinc-400">
+                      Enter the IP shown in the CMD window (e.g., 192.168.1.15)
+                    </p>
+                  </div>
 
-                <button
-                  id="btn-home-scan-qr"
-                  onClick={onOpenAddDevice}
-                  className="py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-1.5"
-                  title="Scan QR Code from Laptop Screen"
-                >
-                  <span>📷 Scan CMD QR Code</span>
-                </button>
-              </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-300 flex items-center justify-between">
+                      <span>Pairing Code</span>
+                      <span className="text-[10px] text-indigo-400 font-mono">6 Digits</span>
+                    </label>
+                    <input
+                      id="home-input-pin"
+                      type="text"
+                      maxLength={6}
+                      value={directPin}
+                      onChange={(e) => setDirectPin(e.target.value.replace(/\D/g, ''))}
+                      placeholder="Enter the 6-digit PIN (e.g., 483921)"
+                      className="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                      required
+                    />
+                    <p className="text-[10px] text-zinc-400">
+                      Enter the 6-digit PIN (e.g., 483921)
+                    </p>
+                  </div>
+                </div>
 
-              <div className="text-[11px] text-zinc-400 bg-zinc-950/60 p-2.5 rounded-xl border border-zinc-800 text-center">
-                Laptop CMD window me dikh raha <span className="text-emerald-400 font-mono font-bold">Local IP Address</span> aur <span className="text-indigo-400 font-mono font-bold">6-digit PIN</span> enter karein.
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <button
+                    id="btn-home-direct-connect"
+                    type="submit"
+                    disabled={isConnecting || !directIp.trim() || !directPin.trim()}
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-[0.98] text-white text-xs font-bold shadow-md shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isConnecting ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Connecting to PC...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>⚡ Connect to PC (IP &amp; PIN)</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    id="btn-home-scan-qr"
+                    type="button"
+                    onClick={onOpenAddDevice}
+                    className="py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-1.5"
+                    title="Scan QR Code from Laptop Screen"
+                  >
+                    <Scan className="w-3.5 h-3.5" />
+                    <span>📷 Scan CMD QR Code</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* HTTPS Mixed Content Help Notice with Direct Link */}
+              {typeof window !== 'undefined' && window.location.protocol === 'https:' && (
+                <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-[11px] text-amber-200/90 space-y-1.5">
+                  <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>Phone se direct control ke liye phone browser me ye link kholein:</span>
+                  </div>
+                  <p className="text-[10px] text-zinc-300 leading-relaxed">
+                    Browser security HTTPS se local PC WebSocket block karti hai. Phone me direct local server kholein:
+                  </p>
+                  <a
+                    href={`http://${directIp ? directIp.replace(/^(https?:\/\/|wss?:\/\/)/, '').split(':')[0] : '192.168.1.15'}:${directPort || '8765'}/?pair=${directPin}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 font-mono font-bold text-emerald-400 bg-black/60 px-2.5 py-1.5 rounded-lg border border-emerald-500/30 hover:bg-black transition-colors break-all"
+                  >
+                    <span>http://{directIp ? directIp.replace(/^(https?:\/\/|wss?:\/\/)/, '').split(':')[0] : '192.168.1.15'}:{directPort || '8765'}/?pair={directPin}</span>
+                    <ExternalLink className="w-3 h-3 text-emerald-400 shrink-0" />
+                  </a>
+                </div>
+              )}
+
+              {/* Quick links to download run_webmouse.bat */}
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-400 px-1">
+                <span>Laptop me CMD window kholne ke liye:</span>
+                <a
+                  href="/run_webmouse.bat"
+                  download="run_webmouse.bat"
+                  className="inline-flex items-center gap-1 font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 px-2 py-1 rounded-lg"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>Download run_webmouse.bat</span>
+                </a>
               </div>
             </div>
           )}

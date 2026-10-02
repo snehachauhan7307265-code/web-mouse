@@ -24,14 +24,19 @@ if %errorlevel% equ 0 (
     if %errorlevel% equ 0 (
         set PYTHON_CMD=py
     ) else (
-        echo [ERROR] Python is not installed or not in PATH!
-        echo.
-        echo Please install Python 3.8+ from: https://www.python.org/downloads/
-        echo (Make sure to check the box "Add Python to PATH" during installation)
-        echo.
-        echo ================================================================
-        pause
-        goto END_HANG
+        python3 --version >nul 2>&1
+        if %errorlevel% equ 0 (
+            set PYTHON_CMD=python3
+        ) else (
+            echo [ERROR] Python is not installed or not in PATH!
+            echo.
+            echo Please install Python 3.8+ from: https://www.python.org/downloads/
+            echo (Make sure to check the box "Add Python to PATH" during installation)
+            echo.
+            echo ================================================================
+            pause
+            goto END_HANG
+        )
     )
 )
 

@@ -3,14 +3,14 @@ setlocal enabledelayedexpansion
 title WebMouse V1 — Windows Helper Server [PORT 8765]
 color 0A
 
-:: Ensure working directory is the script folder
+:: Ensure working directory is this script folder
 cd /d "%~dp0"
 
 echo ================================================================
 echo           WEBMOUSE V1 — WINDOWS HELPER (CMD LAUNCHER)
 echo ================================================================
 echo.
-echo [*] Initializing WebMouse Windows Helper...
+echo [*] Initializing WebMouse Windows Helper on Port 8765...
 echo [*] THIS CMD WINDOW WILL STAY OPEN SO YOU CAN READ YOUR PAIRING PIN!
 echo.
 
@@ -29,7 +29,6 @@ if %errorlevel% equ 0 (
         echo Please install Python 3.8+ from: https://www.python.org/downloads/
         echo (Make sure to check the box "Add Python to PATH" during installation)
         echo.
-        echo Keeping window open so you can read this message.
         echo ================================================================
         pause
         goto END_HANG
@@ -49,26 +48,37 @@ if not exist "%~dp0webmouse_server.py" (
 )
 
 if not exist "%~dp0webmouse_server.py" (
-    echo [*] Downloading latest webmouse_server.py...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://ais-dev-6o3nmbyzug3q657ngky2wo-972641513496.asia-southeast1.run.app/webmouse_server.py' -OutFile '%~dp0webmouse_server.py' -TimeoutSec 15 } catch { (New-Object Net.WebClient).DownloadFile('https://ais-dev-6o3nmbyzug3q657ngky2wo-972641513496.asia-southeast1.run.app/webmouse_server.py', '%~dp0webmouse_server.py') }" >nul 2>&1
-)
-
-if not exist "%~dp0webmouse_server.py" (
-    echo [ERROR] Could not find or download webmouse_server.py.
+    echo [ERROR] Could not find webmouse_server.py.
     echo Please ensure webmouse_server.py is in the same folder as this bat file.
     echo.
     pause
     goto END_HANG
 )
 
-:: 3. Check dependencies
+:: 3. Automatically allow port 8765 in Windows Firewall
+echo [*] Configuring Windows Firewall for Port 8765...
+netsh advfirewall firewall add rule name="WebMouse Helper Port 8765" dir=in action=allow protocol=TCP localport=8765 >nul 2>&1
+
+:: 4. Check and install dependencies
 %PYTHON_CMD% -c "import websockets" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [*] Installing 'websockets' library (takes ~5 seconds)...
+    echo [*] Installing required 'websockets' library (takes ~5 seconds)...
     %PYTHON_CMD% -m pip install websockets
 )
 
-:: 4. Run server in persistent loop - will NEVER close
+%PYTHON_CMD% -c "import pyautogui" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [*] Installing 'pyautogui' and 'pyperclip' for Windows mouse control...
+    %PYTHON_CMD% -m pip install pyautogui pyperclip
+)
+
+%PYTHON_CMD% -c "import qrcode" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [*] Installing 'qrcode' for terminal QR display...
+    %PYTHON_CMD% -m pip install qrcode
+)
+
+:: 5. Run server in persistent loop - will NEVER close accidentally
 :RUN_SERVER_LOOP
 echo.
 echo ================================================================

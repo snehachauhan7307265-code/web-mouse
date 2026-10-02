@@ -8,7 +8,8 @@ for a Windows computer over the same local Wi-Fi network.
 Controls the REAL Windows cursor using PyAutoGUI (with ctypes user32 fallback).
 Listens on WebSocket port 8765 with 6-digit pairing code authentication.
 Accurately detects laptop Wi-Fi IP, displays scannable QR in CMD,
-and gracefully handles HTTP browser requests without 'invalid Connection header: keep-alive'.
+serves the WebMouse web controller over HTTP directly on port 8765,
+and gracefully avoids Mixed Content errors.
 """
 
 import asyncio
@@ -18,11 +19,9 @@ import socket
 import sys
 import argparse
 import os
-import base64
-import http
+import mimetypes
 import subprocess
 import re
-import webbrowser
 from pathlib import Path
 from typing import Set, Dict, Any, Optional, Tuple, List
 
@@ -185,41 +184,43 @@ def get_wifi_and_all_ips() -> Tuple[str, List[str]]:
     wifi_ip = None
     all_ips: List[str] = []
 
-    # 1. On Windows: inspect ipconfig to find the Wireless / Wi-Fi adapter IPv4
-    if sys.platform == "win32":
-        try:
-            output = subprocess.check_output("ipconfig", shell=True, text=True, errors="ignore")
-            current_adapter = ""
-            is_wifi = False
-            for line in output.splitlines():
-                stripped = line.strip()
-                if line and not line.startswith(" ") and not line.startswith("\t"):
-                    current_adapter = line.lower()
-                    is_wifi = any(k in current_adapter for k in ["wireless", "wi-fi", "wifi", "wlan"])
-                elif is_wifi and "ipv4" in stripped.lower():
-                    match = re.search(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", stripped)
-                    if match:
-                        found_ip = match.group(1)
-                        if not found_ip.startswith("127.") and not found_ip.startswith("169.254."):
-                            wifi_ip = found_ip
-                            if found_ip not in all_ips:
-                                all_ips.append(found_ip)
-        except Exception:
-            pass
-
-    # 2. Probe default UDP routing interface (e.g. Wi-Fi router gateway)
+    # 1. Active network route probe: Connect UDP socket to public gateway (most accurate on Windows)
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         probe_ip = s.getsockname()[0]
         s.close()
         if probe_ip and not probe_ip.startswith("127.") and not probe_ip.startswith("169.254."):
-            if not wifi_ip:
-                wifi_ip = probe_ip
-            if probe_ip not in all_ips:
-                all_ips.append(probe_ip)
+            wifi_ip = probe_ip
+            all_ips.append(probe_ip)
     except Exception:
         pass
+
+    # 2. On Windows: inspect ipconfig to find the Wireless / Wi-Fi adapter IPv4
+    if sys.platform == "win32":
+        try:
+            output = subprocess.check_output("ipconfig", shell=True, text=True, errors="ignore")
+            current_adapter = ""
+            is_real_wifi = False
+            for line in output.splitlines():
+                stripped = line.strip()
+                if line and not line.startswith(" ") and not line.startswith("\t"):
+                    current_adapter = line.lower()
+                    # Check for genuine Wi-Fi adapter, exclude virtual adapters like Wi-Fi Direct or VirtualBox
+                    has_wifi_keyword = any(k in current_adapter for k in ["wireless", "wi-fi", "wifi", "wlan"])
+                    is_virtual = any(k in current_adapter for k in ["virtual", "direct", "vmware", "virtualbox", "bluetooth", "loopback", "vethernet"])
+                    is_real_wifi = has_wifi_keyword and not is_virtual
+                elif is_real_wifi and "ipv4" in stripped.lower():
+                    match = re.search(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", stripped)
+                    if match:
+                        found_ip = match.group(1)
+                        if not found_ip.startswith("127.") and not found_ip.startswith("169.254."):
+                            if not wifi_ip:
+                                wifi_ip = found_ip
+                            if found_ip not in all_ips:
+                                all_ips.append(found_ip)
+        except Exception:
+            pass
 
     # 3. Hostname resolution fallback
     try:
@@ -254,11 +255,11 @@ def print_ascii_qr(data: str):
             qr = qrcode.QRCode(border=1)
             qr.add_data(data)
             qr.make(fit=True)
-            print("=" * 60)
-            print("        📷 PHONE SCANNER SE YE QR CODE SCAN KAREIN:")
-            print("=" * 60)
+            print("=" * 62)
+            print("        📷 PHONE CAMERA SE YE QR CODE SCAN KAREIN:")
+            print("=" * 62)
             qr.print_ascii(invert=True)
-            print("=" * 60 + "\n")
+            print("=" * 62 + "\n")
             return
         except Exception:
             pass
@@ -298,10 +299,11 @@ class WebMouseServer:
         print("-" * 62)
         print(" HOW TO CONNECT FROM PHONE:")
         print(" 1. Phone aur Laptop ko SAME Wi-Fi se connect karein.")
-        print(" 2. Phone me WebMouse open karein:")
+        print(" 2. Phone me WebMouse open karke ye enter karein:")
         print(f"    - Local IP:    {wifi_ip}")
         print(f"    - Pairing PIN: {self.pairing_code}")
-        print(" 3. '⚡ Connect to PC' dabayein ya niche diya gaya QR scan karein!")
+        print(" 3. Ya Phone Camera se niche diya gaya QR Code scan karein!")
+        print(f"    Direct URL: http://{wifi_ip}:{self.port}/?pair={self.pairing_code}")
         print("=" * 62)
         
         # QR Code payload: standard URL that opens the local app directly with zero Mixed Content issues
@@ -327,9 +329,9 @@ class WebMouseServer:
 
                 msg_type = data.get("type", "")
 
-                # 1. Authentication Handshake with 6-digit pairing code
-                if msg_type == "auth":
-                    code = str(data.get("code", data.get("pin", data.get("token", "")))).strip()
+                # 1. Universal Authentication Handshake with 6-digit pairing code
+                if msg_type in ["auth", "hello", "pair", "authenticate"]:
+                    code = str(data.get("code") or data.get("pin") or data.get("pairingCode") or data.get("token") or data.get("pairingToken") or "").strip()
                     device_name = str(data.get("deviceName", "Mobile Phone")).strip()
 
                     # Validate 6-digit pairing code
@@ -337,20 +339,35 @@ class WebMouseServer:
                         self.authenticated_clients.add(websocket)
                         self.client_info[websocket] = f"{device_name} ({client_addr})"
                         print(f"[OK] AUTHENTICATED: '{device_name}' from {client_addr} paired successfully!")
+                        
+                        # Send auth_result (V1 standard)
                         await websocket.send(json.dumps({
                             "type": "auth_result",
+                            "status": "authenticated",
                             "success": True,
                             "computerName": socket.gethostname(),
+                            "deviceName": socket.gethostname(),
                             "screenWidth": self.screen_width,
                             "screenHeight": self.screen_height,
+                            "capabilities": ["mouse", "keyboard", "media", "presentation"],
                             "message": "Authentication successful"
+                        }))
+                        # Also send hello_ack & connection_ready for V2 protocol compatibility
+                        await websocket.send(json.dumps({
+                            "type": "hello_ack",
+                            "status": "authenticated",
+                            "computerName": socket.gethostname(),
+                            "capabilities": ["mouse", "keyboard", "media", "presentation"]
+                        }))
+                        await websocket.send(json.dumps({
+                            "type": "connection_ready"
                         }))
                     else:
                         print(f"[X] AUTH FAILED: Wrong pairing code '{code}' from {client_addr} (Expected: {self.pairing_code})")
                         await websocket.send(json.dumps({
                             "type": "auth_result",
                             "success": False,
-                            "message": "Incorrect 6-digit pairing code. Please enter the code shown in the Windows terminal."
+                            "message": "Incorrect 6-digit pairing code. Please enter the code shown in the Windows CMD window."
                         }))
                     continue
 
@@ -518,93 +535,356 @@ class WebMouseServer:
                 elif msg_type == "share_link":
                     url = str(data.get("url", ""))
                     if url:
-                        print(f"[*] Opening browser link: {url}")
-                        webbrowser.open(url)
-
-                # 19. Text Sharing (Copy to PC Clipboard)
-                elif msg_type == "share_text":
-                    text = str(data.get("text", ""))
-                    if text and pyperclip:
-                        pyperclip.copy(text)
-                        await websocket.send(json.dumps({
-                            "type": "notification",
-                            "message": "Text copied to PC clipboard"
-                        }))
-
-                # 20. Clipboard Sync (Get PC Clipboard)
-                elif msg_type == "get_clipboard":
-                    if pyperclip:
                         try:
-                            text = pyperclip.paste()
-                            if text:
-                                await websocket.send(json.dumps({
-                                    "type": "clipboard_data",
-                                    "text": text
-                                }))
-                        except Exception as e:
-                            print(f"Error getting clipboard: {e}")
-
-                # 21. File Transfer Phone -> PC
-                elif msg_type == "file_transfer_start":
-                    filename = data.get("filename", "received_file")
-                    downloads_dir = Path.home() / "Downloads" / "WebMouse"
-                    downloads_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    filename = os.path.basename(filename)
-                    filepath = downloads_dir / filename
-                    
-                    base, ext = os.path.splitext(filename)
-                    counter = 1
-                    while filepath.exists():
-                        filepath = downloads_dir / f"{base}_{counter}{ext}"
-                        counter += 1
-                        
-                    self.active_file_transfers[websocket] = open(filepath, "wb")
-                    print(f"[*] File transfer starting: {filepath}")
-
-                elif msg_type == "file_chunk":
-                    chunk = data.get("chunk", "")
-                    if websocket in self.active_file_transfers:
-                        try:
-                            file_data = base64.b64decode(chunk)
-                            self.active_file_transfers[websocket].write(file_data)
-                        except Exception as e:
-                            print(f"Error writing chunk: {e}")
-
-                elif msg_type == "file_transfer_end":
-                    if websocket in self.active_file_transfers:
-                        try:
-                            self.active_file_transfers[websocket].close()
-                            del self.active_file_transfers[websocket]
-                            print("[*] File transfer completed and saved to Downloads/WebMouse.")
+                            import webbrowser
+                            webbrowser.open(url)
                             await websocket.send(json.dumps({
                                 "type": "notification",
-                                "message": "File successfully saved to Downloads/WebMouse"
+                                "message": f"Opened link: {url}"
                             }))
                         except Exception as e:
-                            print(f"Error closing file: {e}")
+                            print(f"Error opening link: {e}")
 
-        except websockets.ConnectionClosed:
+                # 19. Clipboard Sharing
+                elif msg_type == "clipboard":
+                    text = str(data.get("text", ""))
+                    if text and pyperclip:
+                        try:
+                            pyperclip.copy(text)
+                            await websocket.send(json.dumps({
+                                "type": "notification",
+                                "message": "Copied text to Windows clipboard"
+                            }))
+                        except Exception as e:
+                            print(f"Error copying to clipboard: {e}")
+
+                # 20. Screen Capture / Screenshot
+                elif msg_type == "take_screenshot":
+                    try:
+                        import io
+                        import base64
+                        from PIL import ImageGrab
+                        screenshot = ImageGrab.grab()
+                        # Resize thumbnail for performance
+                        screenshot.thumbnail((1280, 720))
+                        buffer = io.BytesIO()
+                        screenshot.save(buffer, format="JPEG", quality=75)
+                        img_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                        await websocket.send(json.dumps({
+                            "type": "screenshot_result",
+                            "success": True,
+                            "data": f"data:image/jpeg;base64,{img_str}",
+                            "filename": f"screenshot_{int(asyncio.get_event_loop().time())}.jpg"
+                        }))
+                    except Exception as e:
+                        await websocket.send(json.dumps({
+                            "type": "screenshot_result",
+                            "success": False,
+                            "error": str(e)
+                        }))
+
+        except websockets.exceptions.ConnectionClosed:
             pass
-        except Exception as e:
-            print(f"[!] Connection exception with {client_addr}: {e}")
         finally:
+            if websocket in self.authenticated_clients:
+                self.authenticated_clients.remove(websocket)
             info = self.client_info.pop(websocket, client_addr)
-            self.authenticated_clients.discard(websocket)
-            if websocket in self.active_file_transfers:
+            print(f"[-] DISCONNECTED: {info}")
+
+
+def get_static_web_file(req_path: str) -> Optional[Tuple[bytes, str]]:
+    """Look for static web files in web_dist, dist, or adjacent folders."""
+    script_dir = Path(__file__).parent.resolve()
+    candidate_dirs = [
+        script_dir / "web_dist",
+        script_dir / "dist",
+        script_dir.parent / "dist",
+        script_dir / "windows-helper" / "web_dist",
+    ]
+
+    clean_path = req_path.split("?")[0].lstrip("/")
+    if not clean_path or clean_path == "":
+        clean_path = "index.html"
+
+    for base_dir in candidate_dirs:
+        if base_dir.is_dir():
+            target = (base_dir / clean_path).resolve()
+            # Ensure within base_dir to avoid directory traversal
+            if str(target).startswith(str(base_dir.resolve())) and target.is_file():
                 try:
-                    self.active_file_transfers[websocket].close()
+                    mime, _ = mimetypes.guess_type(str(target))
+                    if not mime:
+                        if target.suffix == ".js": mime = "application/javascript"
+                        elif target.suffix == ".css": mime = "text/css"
+                        elif target.suffix == ".html": mime = "text/html"
+                        else: mime = "application/octet-stream"
+                    return target.read_bytes(), mime
                 except Exception:
                     pass
-                del self.active_file_transfers[websocket]
-            print(f"[-] DISCONNECTED: {info}")
+
+            # SPA fallback: if not found and doesn't have an extension, try index.html
+            if "." not in clean_path:
+                spa_index = base_dir / "index.html"
+                if spa_index.is_file():
+                    try:
+                        return spa_index.read_bytes(), "text/html; charset=utf-8"
+                    except Exception:
+                        pass
+    return None
+
+
+def get_standalone_touch_controller_html(pairing_code: str, ip: str, port: int) -> bytes:
+    """Built-in ultra-fast mobile touch controller served directly from Python."""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>WebMouse Controller</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #09090b;
+      color: #f4f4f5;
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      background: #18181b;
+      border-bottom: 1px solid #27272a;
+    }
+    .brand { font-weight: 800; font-size: 0.95rem; color: #fff; letter-spacing: -0.02em; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      background: #052e16;
+      color: #4ade80;
+      border: 1px solid #166534;
+    }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; }
+    .trackpad {
+      flex: 1;
+      margin: 0.75rem;
+      background: #121215;
+      border: 2px dashed #27272a;
+      border-radius: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+      position: relative;
+    }
+    .trackpad-hint { font-size: 0.8rem; color: #71717a; pointer-events: none; }
+    .click-bar {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0 0.75rem 0.5rem;
+      height: 4.5rem;
+    }
+    .btn-click {
+      flex: 1;
+      background: #1e1e24;
+      border: 1px solid #3f3f46;
+      border-radius: 0.85rem;
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.85rem;
+      touch-action: manipulation;
+    }
+    .btn-click:active { background: #4f46e5; }
+    .toolbar {
+      display: flex;
+      gap: 0.4rem;
+      padding: 0 0.75rem 0.75rem;
+    }
+    .tool-btn {
+      flex: 1;
+      padding: 0.6rem 0.2rem;
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 0.65rem;
+      color: #a1a1aa;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-align: center;
+    }
+    .tool-btn:active { background: #27272a; color: #fff; }
+    .input-row {
+      display: flex;
+      gap: 0.4rem;
+      padding: 0 0.75rem 0.5rem;
+    }
+    .text-input {
+      flex: 1;
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 0.65rem;
+      padding: 0.5rem 0.75rem;
+      color: #fff;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">🖱️ WebMouse V1</div>
+    <div id="statusBadge" class="status">
+      <span class="status-dot"></span>
+      <span id="statusText">Connecting...</span>
+    </div>
+  </header>
+
+  <div id="trackpad" class="trackpad">
+    <div class="trackpad-hint">Touch &amp; Drag to move real PC cursor</div>
+    <div class="trackpad-hint" style="font-size:0.7rem; margin-top:4px;">Tap to Left Click • 2 Fingers to Right Click</div>
+  </div>
+
+  <div class="click-bar">
+    <button id="btnLeft" class="btn-click">LEFT CLICK</button>
+    <button id="btnRight" class="btn-click">RIGHT CLICK</button>
+  </div>
+
+  <div class="input-row">
+    <input id="typeInput" class="text-input" placeholder="Type text to send to PC..." />
+    <button id="btnSendText" class="tool-btn" style="flex:0 0 4rem; background:#4f46e5; color:#fff;">Send</button>
+  </div>
+
+  <div class="toolbar">
+    <button onclick="sendShortcut(['win','d'])" class="tool-btn">Desktop</button>
+    <button onclick="sendMedia('volumeup')" class="tool-btn">Vol +</button>
+    <button onclick="sendMedia('volumedown')" class="tool-btn">Vol -</button>
+    <button onclick="sendMedia('playpause')" class="tool-btn">Play/Pause</button>
+    <button onclick="sendShortcut(['win','l'])" class="tool-btn">Lock</button>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const pin = urlParams.get('pair') || urlParams.get('code') || '__PAIRING_CODE__';
+    const hostName = window.location.hostname || '__IP__';
+    const portNum = window.location.port || '__PORT__';
+    const wsUrl = 'ws://' + hostName + ':' + portNum;
+
+    let ws = null;
+    function connect() {
+      document.getElementById('statusText').innerText = 'Connecting...';
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        document.getElementById('statusText').innerText = 'Authenticating...';
+        ws.send(JSON.stringify({
+          type: 'auth',
+          code: pin,
+          pin: pin,
+          deviceName: navigator.userAgent.includes('iPhone') ? 'iPhone' : 'Android Phone'
+        }));
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'auth_result' && msg.success) {
+            document.getElementById('statusText').innerText = 'Connected 🟢';
+            document.getElementById('statusBadge').style.background = '#052e16';
+          }
+        } catch(err) {}
+      };
+
+      ws.onclose = () => {
+        document.getElementById('statusText').innerText = 'Disconnected';
+        document.getElementById('statusBadge').style.background = '#450a0a';
+        setTimeout(connect, 2000);
+      };
+
+      ws.onerror = () => {
+        document.getElementById('statusText').innerText = 'Error';
+      };
+    }
+    connect();
+
+    function sendCmd(cmd) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(cmd));
+      }
+    }
+
+    const pad = document.getElementById('trackpad');
+    let lastX = 0, lastY = 0, touchCount = 0, tapStart = 0;
+
+    pad.addEventListener('touchstart', (e) => {
+      touchCount = e.touches.length;
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+      tapStart = Date.now();
+    }, { passive: false });
+
+    pad.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        const dx = (e.touches[0].clientX - lastX) * 1.6;
+        const dy = (e.touches[0].clientY - lastY) * 1.6;
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+        sendCmd({ type: 'mouse_move', dx: Math.round(dx), dy: Math.round(dy) });
+      } else if (e.touches.length === 2) {
+        const dy = e.touches[0].clientY - lastY;
+        lastY = e.touches[0].clientY;
+        if (Math.abs(dy) > 2) {
+          sendCmd({ type: 'scroll', amount: dy > 0 ? 1 : -1 });
+        }
+      }
+    }, { passive: false });
+
+    pad.addEventListener('touchend', (e) => {
+      const duration = Date.now() - tapStart;
+      if (duration < 250) {
+        if (touchCount === 1) sendCmd({ type: 'left_click' });
+        else if (touchCount === 2) sendCmd({ type: 'right_click' });
+      }
+    });
+
+    document.getElementById('btnLeft').addEventListener('click', () => sendCmd({ type: 'left_click' }));
+    document.getElementById('btnRight').addEventListener('click', () => sendCmd({ type: 'right_click' }));
+
+    document.getElementById('btnSendText').addEventListener('click', () => {
+      const inp = document.getElementById('typeInput');
+      if (inp.value) {
+        sendCmd({ type: 'type_text', text: inp.value });
+        inp.value = '';
+      }
+    });
+
+    window.sendMedia = (action) => sendCmd({ type: 'media_control', action });
+    window.sendShortcut = (keys) => sendCmd({ type: 'shortcut', keys });
+  </script>
+</body>
+</html>"""
+    html = html.replace("__PAIRING_CODE__", pairing_code).replace("__IP__", ip).replace("__PORT__", str(port))
+    return html.encode("utf-8")
 
 
 async def process_http_request(path: str, request_headers: Any, pairing_code: str, ip: str, port: int):
     """
     Handle plain HTTP browser requests gracefully on port 8765.
-    Prevents: 'Failed to open a WebSocket connection: invalid Connection header: keep-alive.
-    You cannot access a WebSocket server directly with a browser. You need a WebSocket client.'
+    1. Check if Upgrade is 'websocket' - if so, allow normal WebSocket upgrade.
+    2. If regular browser HTTP GET:
+       - Check for static files in web_dist / dist (serves the full WebMouse React app)
+       - If not present, serve the standalone touch controller HTML!
     """
     upgrade = ""
     if hasattr(request_headers, "get"):
@@ -616,147 +896,26 @@ async def process_http_request(path: str, request_headers: Any, pairing_code: st
                 break
 
     if upgrade.lower() != "websocket":
-        # Regular HTTP request from a browser! Serve informative status & connection page
-        html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebMouse V1 Helper Server</title>
-  <style>
-    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #09090b;
-      color: #f4f4f5;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      padding: 1.5rem;
-    }}
-    .card {{
-      background: #18181b;
-      border: 1px solid #27272a;
-      border-radius: 1.25rem;
-      padding: 2rem;
-      max-width: 440px;
-      width: 100%;
-      text-align: center;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
-    }}
-    .status-badge {{
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      background: #052e16;
-      color: #4ade80;
-      border: 1px solid #166534;
-      padding: 0.35rem 0.85rem;
-      border-radius: 9999px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      margin-bottom: 1.25rem;
-    }}
-    .status-dot {{
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #22c55e;
-      box-shadow: 0 0 10px #22c55e;
-    }}
-    h1 {{ font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; color: #fff; }}
-    p.desc {{ font-size: 0.875rem; color: #a1a1aa; margin-bottom: 1.5rem; }}
-    .info-box {{
-      background: #09090b;
-      border: 1px solid #27272a;
-      border-radius: 0.75rem;
-      padding: 1rem;
-      margin-bottom: 1.25rem;
-      text-align: left;
-    }}
-    .info-row {{
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0.4rem 0;
-      font-size: 0.85rem;
-      border-bottom: 1px solid #1f1f23;
-    }}
-    .info-row:last-child {{ border-bottom: none; }}
-    .info-label {{ color: #71717a; }}
-    .info-val {{ color: #fafafa; font-family: monospace; font-weight: 600; }}
-    .pin-box {{
-      background: linear-gradient(135deg, #1e1b4b, #0f172a);
-      border: 1px solid #4338ca;
-      border-radius: 0.75rem;
-      padding: 1rem;
-      margin-bottom: 1.5rem;
-    }}
-    .pin-label {{ font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: #a5b4fc; font-weight: 700; margin-bottom: 0.25rem; }}
-    .pin-code {{ font-size: 2.25rem; font-family: monospace; font-weight: 800; letter-spacing: 0.25em; color: #38bdf8; }}
-    .instructions {{
-      font-size: 0.8rem;
-      color: #94a3b8;
-      line-height: 1.5;
-      text-align: left;
-      background: #111827;
-      border: 1px solid #1f2937;
-      border-radius: 0.75rem;
-      padding: 0.85rem 1rem;
-      margin-bottom: 1.25rem;
-    }}
-    .instructions ol {{ margin-left: 1.25rem; }}
-    .instructions li {{ margin-bottom: 0.35rem; }}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="status-badge">
-      <span class="status-dot"></span>
-      HELPER SERVER ACTIVE
-    </div>
-    <h1>WebMouse V1 Helper</h1>
-    <p class="desc">Wireless Mouse & Keyboard Server for Windows</p>
-    
-    <div class="pin-box">
-      <div class="pin-label">6-Digit Pairing Code</div>
-      <div class="pin-code">{pairing_code}</div>
-    </div>
+        # Check for static assets from built web client
+        static_res = get_static_web_file(path)
+        if static_res:
+            body, mime = static_res
+            return (
+                200,
+                [
+                    ("Content-Type", mime),
+                    ("Content-Length", str(len(body))),
+                    ("Access-Control-Allow-Origin", "*"),
+                    ("Cache-Control", "no-cache"),
+                    ("Connection", "close"),
+                ],
+                body
+            )
 
-    <div class="info-box">
-      <div class="info-row">
-        <span class="info-label">Computer</span>
-        <span class="info-val">{socket.gethostname()}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Wi-Fi IP Address</span>
-        <span class="info-val">{ip}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Port</span>
-        <span class="info-val">{port}</span>
-      </div>
-    </div>
-
-    <div class="instructions">
-      <ol>
-        <li>Connect phone to the <strong>same Wi-Fi</strong>.</li>
-        <li>In WebMouse on phone:</li>
-        <li>Enter IP <code>{ip}</code> and PIN <code>{pairing_code}</code>.</li>
-        <li>Tap <strong>Connect to PC</strong>!</li>
-      </ol>
-    </div>
-
-    <div style="font-size: 0.75rem; color: #71717a;">
-      WebSocket endpoint: <code>ws://{ip}:{port}/</code>
-    </div>
-  </div>
-</body>
-</html>"""
-        body = html.encode("utf-8")
+        # Fallback to standalone mobile touch controller
+        body = get_standalone_touch_controller_html(pairing_code, ip, port)
         return (
-            http.HTTPStatus.OK,
+            200,
             [
                 ("Content-Type", "text/html; charset=utf-8"),
                 ("Content-Length", str(len(body))),

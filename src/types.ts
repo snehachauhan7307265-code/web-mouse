@@ -157,7 +157,7 @@ export interface PresentationState {
 }
 
 export type OutgoingMessage =
-  | { type: 'auth'; code: string; token?: string; deviceName: string }
+  | { type: 'auth'; code: string; pin?: string; pairingCode?: string; token?: string; pairingToken?: string; deviceName: string }
   | { type: 'mouse_move'; dx: number; dy: number }
   | { type: 'left_click' }
   | { type: 'right_click' }

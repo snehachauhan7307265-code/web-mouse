@@ -76,10 +76,21 @@ export class WebSocketClient {
 
   public connect(isAutoReconnect = false) {
     console.log('[WebSocketClient] connect called', { isAutoReconnect, rawHost: this.config.host });
-    // If already connected or connecting, prevent duplicate socket
-    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
-      console.log('[WebSocketClient] already connecting or open');
-      return;
+
+    // If an intentional fresh connect is initiated by user, cleanly abort any previous hanging socket
+    if (this.socket) {
+      if (this.socket.readyState === WebSocket.OPEN && isAutoReconnect) {
+        console.log('[WebSocketClient] already open and connected');
+        return;
+      }
+      try {
+        this.socket.onopen = null;
+        this.socket.onmessage = null;
+        this.socket.onerror = null;
+        this.socket.onclose = null;
+        this.socket.close();
+      } catch (e) {}
+      this.socket = null;
     }
 
     if (!isAutoReconnect) {
@@ -186,11 +197,14 @@ export class WebSocketClient {
         console.log('[WebMouse] helper connection: WebSocket opened to', wsUrl);
         console.log('[WebMouse] Sending authentication code:', codeToSend);
 
-        // Send standard authentication handshake with 6-digit code
+        // Send universal authentication handshake with 6-digit code
         this.send({
           type: 'auth',
           code: codeToSend,
+          pin: codeToSend,
+          pairingCode: codeToSend,
           token: tokenToSend,
+          pairingToken: tokenToSend,
           deviceName: this.deviceName || 'WebMouse Phone',
         });
       };
@@ -263,24 +277,26 @@ export class WebSocketClient {
   }
 
   private handleServerMessage(data: any) {
-    if (data.type === 'auth_result') {
-      if (data.success) {
+    if (data.type === 'auth_result' || data.type === 'hello_ack' || data.type === 'connection_ready') {
+      const isSuccess = data.success === true || data.status === 'authenticated' || data.status === 'ok' || data.type === 'connection_ready';
+      if (isSuccess) {
         this.reconnectAttempts = 0;
         this.setStatus('connected');
-        this.addLog('rx', `Authenticated: Connected to ${data.computerName || 'Windows PC'}`);
+        this.addLog('rx', `Authenticated: Connected to ${data.computerName || data.deviceName || 'Windows PC'}`);
         
         // Save persistent trusted token if provided (Requirement 9)
-        if (data.token) {
+        if (data.token || data.pairingToken) {
+          const t = data.token || data.pairingToken;
           try {
-            localStorage.setItem('webmouse_trusted_token', data.token);
-            this.config.token = data.token;
+            localStorage.setItem('webmouse_trusted_token', t);
+            this.config.token = t;
           } catch (e) {}
         }
 
-        console.log('[WebMouse] successful pairing: Connected to', data.computerName || 'Windows PC');
+        console.log('[WebMouse] successful pairing: Connected to', data.computerName || data.deviceName || 'Windows PC');
 
         this.onDeviceInfo({
-          computerName: data.computerName || 'Windows PC',
+          computerName: data.computerName || data.deviceName || 'Windows PC',
           screenWidth: data.screenWidth,
           screenHeight: data.screenHeight,
           ip: this.config.host,
