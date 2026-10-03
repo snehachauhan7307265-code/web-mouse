@@ -107,7 +107,7 @@ export const ALLOWLISTED_APPLICATIONS_REGISTRY: Record<string, AllowedAppConfig>
   youtube: {
     displayName: 'YouTube',
     url: 'https://www.youtube.com',
-    aliases: ['youtube', 'yt', 'youtube.com', 'video', 'videos', 'यूट्यूब', 'यूट्युब'],
+    aliases: ['youtube', 'yt', 'youtube.com', 'video', 'videos', 'gaana', 'gana', 'song', 'songs', 'गाना', 'यूट्यूब', 'यूट्युब'],
   },
   chrome: {
     displayName: 'Google Chrome',

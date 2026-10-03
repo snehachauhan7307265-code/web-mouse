@@ -30,6 +30,7 @@ interface HomeViewProps {
     controlMode?: 'mouse' | 'keyboard' | 'media' | 'presentation' | 'tv_remote' | 'projector' | 'custom'
   ) => void;
   onTriggerVoice: () => void;
+  onOpenDiagnostics?: () => void;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -43,6 +44,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onOpenPairModal,
   onNavigate,
   onTriggerVoice,
+  onOpenDiagnostics,
 }) => {
   const isConnected = connectionState === 'CONNECTED';
 
@@ -51,21 +53,39 @@ export const HomeView: React.FC<HomeViewProps> = ({
       {/* Brand Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
-            WEBMOUSE V2
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
+              WEBMOUSE
+            </h1>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-[10px]">
+              V1 STABLE
+            </span>
+          </div>
           <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
-            Universal Device Control
+            Universal Windows PC Touchpad &amp; Keyboard
           </p>
         </div>
 
-        <button
-          onClick={onOpenPairModal}
-          className="py-2 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>[ + Pair Windows PC ]</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {onOpenDiagnostics && (
+            <button
+              onClick={onOpenDiagnostics}
+              className="py-2 px-3 rounded-xl bg-zinc-850 hover:bg-zinc-800 active:scale-[0.98] text-zinc-300 hover:text-white border border-zinc-700 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm"
+              title="Run Connection Diagnostics and Real Input Tests"
+            >
+              <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="hidden sm:inline">Diagnostics</span>
+            </button>
+          )}
+
+          <button
+            onClick={onOpenPairModal}
+            className="py-2 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>[ + Pair Windows PC ]</span>
+          </button>
+        </div>
       </div>
 
       {/* MY DEVICES SECTION (NEW ZERO-BASED TRUSTED DEVICE CARDS) */}

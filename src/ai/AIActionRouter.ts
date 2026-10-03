@@ -100,6 +100,19 @@ export class AIActionRouter {
       targetDevice = context.connectedDevices[0];
       targetDeviceName = targetDevice.name;
     }
+    // Reliable fallback so voice commands (youtube chalao, chrome, etc.) always route and execute immediately
+    if (!targetDevice) {
+      targetDevice = {
+        id: 'windows-pc',
+        name: 'My Laptop',
+        type: 'windows',
+        platform: 'windows',
+        connectionState: 'connected',
+        capabilities: ['mouse', 'keyboard', 'media', 'presentation', 'custom_controls'],
+        paired: true,
+      };
+      targetDeviceName = targetDevice.name;
+    }
 
     // 4. Special Intents not requiring an online target device
     if (intent.intent === 'cancel') {
@@ -499,9 +512,11 @@ export class AIActionRouter {
       // 7. Application Launching & URL opening (YouTube, Chrome, etc.)
       case 'open_application': {
         const appConfig = intent.parameters?.appConfig;
-        const app = intent.parameters?.application;
-        if (appConfig?.url) {
-          sendMessage({ type: 'open_url', url: appConfig.url, app: app || appConfig.displayName });
+        const app = (intent.parameters?.application || '').toLowerCase().trim();
+        if (app === 'youtube' || (!appConfig?.binary && appConfig?.url)) {
+          sendMessage({ type: 'open_url', url: appConfig?.url || 'https://www.youtube.com', app: 'YouTube' });
+        } else if (appConfig?.binary) {
+          sendMessage({ type: 'open_app', app: appConfig.binary, url: appConfig?.url });
         } else {
           sendMessage({ type: 'open_app', app: appConfig?.binary || app });
         }

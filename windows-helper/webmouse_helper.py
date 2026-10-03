@@ -216,7 +216,7 @@ class WindowsMouseController:
         print(f"[Helper] Opening Application: {clean}")
 
         # 1. Web-based apps
-        if clean in ("youtube", "yt", "youtube.com"):
+        if clean in ("youtube", "yt", "youtube.com", "gaana", "gana"):
             return self.open_url("https://www.youtube.com")
         if clean in ("google", "search"):
             return self.open_url("https://www.google.com")
@@ -353,8 +353,13 @@ class WindowsMouseController:
             print(f"[Helper] Simulated Typing: {text}")
 
     def press_key(self, key_name: str):
-        """Presses a single key."""
-        k = (key_name or "").lower().strip()
+        """Presses a single key according to V1 Keyboard requirements."""
+        if not key_name:
+            return
+
+        k = str(key_name).lower().strip()
+        print(f"[Helper] Key Press: {k}")
+
         KEY_VKS = {
             "enter": 0x0D,
             "return": 0x0D,
@@ -363,17 +368,88 @@ class WindowsMouseController:
             "space": 0x20,
             "escape": 0x1B,
             "esc": 0x1B,
+            "shift": 0x10,
+            "ctrl": 0x11,
+            "control": 0x11,
+            "alt": 0x12,
+            "win": 0x5B,
+            "windows": 0x5B,
+            "delete": 0x2E,
+            "del": 0x2E,
             "up": 0x26,
             "down": 0x28,
             "left": 0x25,
             "right": 0x27,
-            "f5": 0x74,
+            "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73, "f5": 0x74, "f6": 0x75,
+            "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
         }
-        vk = KEY_VKS.get(k)
-        if vk and self.user32:
-            self.user32.keybd_event(vk, 0, 0, 0)
-            time.sleep(0.02)
-            self.user32.keybd_event(vk, 0, 2, 0)
+
+        if self.user32:
+            if k in KEY_VKS:
+                vk = KEY_VKS[k]
+                self.user32.keybd_event(vk, 0, 0, 0)
+                time.sleep(0.015)
+                self.user32.keybd_event(vk, 0, 2, 0)  # KEYEVENTF_KEYUP = 2
+            elif len(key_name) == 1:
+                # Direct character input
+                char_code = ord(key_name)
+                self.user32.keybd_event(0, char_code, 4, 0)  # KEYEVENTF_UNICODE = 4
+                self.user32.keybd_event(0, char_code, 4 | 2, 0)
+        else:
+            print(f"[Simulated Key] {key_name}")
+
+    def press_shortcut(self, keys: list):
+        """Executes a multi-key chord like ['ctrl', 'c'] or ['alt', 'tab'] on Windows."""
+        if not keys:
+            return
+
+        print(f"[Helper] Shortcut: {keys}")
+        VK_MAP = {
+            "ctrl": 0x11,
+            "control": 0x11,
+            "alt": 0x12,
+            "shift": 0x10,
+            "win": 0x5B,
+            "windows": 0x5B,
+            "enter": 0x0D,
+            "return": 0x0D,
+            "tab": 0x09,
+            "escape": 0x1B,
+            "esc": 0x1B,
+            "backspace": 0x08,
+            "space": 0x20,
+            "delete": 0x2E,
+            "del": 0x2E,
+            "up": 0x26,
+            "down": 0x28,
+            "left": 0x25,
+            "right": 0x27,
+            "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73, "f5": 0x74, "f6": 0x75,
+            "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
+        }
+
+        if self.user32:
+            vk_list = []
+            for k in keys:
+                k_lower = str(k).lower().strip()
+                if k_lower in VK_MAP:
+                    vk_list.append(VK_MAP[k_lower])
+                elif len(k_lower) == 1 and ('a' <= k_lower <= 'z' or '0' <= k_lower <= '9'):
+                    vk_list.append(ord(k_lower.upper()))
+
+            # Key down
+            for vk in vk_list:
+                self.user32.keybd_event(vk, 0, 0, 0)
+                time.sleep(0.01)
+
+            time.sleep(0.04)
+
+            # Key up in reverse
+            for vk in reversed(vk_list):
+                self.user32.keybd_event(vk, 0, 2, 0)
+                time.sleep(0.01)
+        else:
+            print(f"[Simulated Shortcut] {keys}")
 
 
 # -------------------------------------------------------------
@@ -586,7 +662,7 @@ class ClientConnection:
                 # Follow with connection_ready
                 self.send_json({
                     "type": "connection_ready",
-                    "capabilities": ["mouse"],
+                    "capabilities": ["mouse", "keyboard"],
                 })
             else:
                 self.send_json({
@@ -618,7 +694,7 @@ class ClientConnection:
                 })
                 self.send_json({
                     "type": "connection_ready",
-                    "capabilities": ["mouse"],
+                    "capabilities": ["mouse", "keyboard"],
                 })
             else:
                 self.send_json({
@@ -676,6 +752,10 @@ class ClientConnection:
         elif mtype == "key":
             key_name = str(data.get("key", ""))
             self.helper_state.mouse.press_key(key_name)
+        elif mtype == "shortcut":
+            keys = data.get("keys", [])
+            self.helper_state.mouse.press_shortcut(keys)
+            self.send_json({"type": "shortcut_ok", "keys": keys, "success": True})
         elif mtype == "voice_command":
             # Direct voice command execution
             query = str(data.get("query", "")).strip()

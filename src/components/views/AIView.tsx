@@ -241,28 +241,44 @@ export const AIView: React.FC<AIViewProps> = ({
   ];
 
   return (
-    <div className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto w-full space-y-6 overflow-y-auto pb-16 select-none animate-in fade-in duration-200">
-      
-      {/* Top Device Connection Banner */}
-      <div className={`p-3 sm:p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+    <div className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto w-full space-y-6 overflow-y-auto pb-24 select-none animate-in fade-in duration-300 relative">
+      {/* Background ambient lighting */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-2xl h-96 bg-gradient-to-b from-rose-500/5 via-indigo-500/5 to-transparent blur-3xl pointer-events-none -z-10" />
+
+      {/* Top Device Connection Status Banner */}
+      <div className={`p-3.5 rounded-2xl border transition-all duration-300 flex items-center justify-between gap-3 shadow-lg ${
         isConnected 
-          ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
-          : 'bg-zinc-900/80 border-zinc-800 text-zinc-400'
+          ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300 shadow-emerald-950/20'
+          : 'bg-zinc-900/90 border-zinc-800 text-zinc-300 shadow-black/40'
       }`}>
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className={`w-3 h-3 rounded-full shrink-0 ${
-            isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'
-          }`} />
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="relative flex items-center justify-center shrink-0">
+            <div className={`w-3.5 h-3.5 rounded-full ${
+              isConnected ? 'bg-emerald-400' : 'bg-zinc-600'
+            }`} />
+            {isConnected && (
+              <div className="absolute w-6 h-6 rounded-full bg-emerald-400/30 animate-ping pointer-events-none" />
+            )}
+          </div>
           <div className="min-w-0">
-            <span className="text-xs font-bold text-white truncate block">
+            <div className="flex items-center gap-2">
+              <span className="text-xs sm:text-sm font-bold text-white truncate">
+                {isConnected 
+                  ? `Laptop Connected: ${activeDevice?.name || 'My Laptop'}` 
+                  : 'Laptop Not Connected'}
+              </span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider ${
+                isConnected 
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
+                  : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+              }`}>
+                {isConnected ? 'Live' : 'Standby'}
+              </span>
+            </div>
+            <span className="text-[11px] text-zinc-400 truncate block mt-0.5">
               {isConnected 
-                ? `Connected to ${activeDevice?.name || 'Windows Laptop'}` 
-                : 'No Laptop Connected'}
-            </span>
-            <span className="text-[11px] text-zinc-400 truncate block">
-              {isConnected 
-                ? 'Voice commands will execute instantly on this PC' 
-                : 'Connect your PC to execute voice commands'}
+                ? 'Voice commands run instantly on Windows PC' 
+                : 'Connect PC or test commands below (direct instant dispatch)'}
             </span>
           </div>
         </div>
@@ -270,7 +286,7 @@ export const AIView: React.FC<AIViewProps> = ({
         {!isConnected && onOpenConnectionModal && (
           <button
             onClick={onOpenConnectionModal}
-            className="py-1.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shrink-0 flex items-center gap-1 shadow-sm"
+            className="py-1.5 px-3.5 rounded-xl bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 shadow-md shadow-rose-900/20 active:scale-95"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Connect PC</span>
@@ -433,17 +449,21 @@ export const AIView: React.FC<AIViewProps> = ({
       {/* ONE-TAP VOICE COMMAND CHIPS ("Instant Action Buttons") */}
       <div className="space-y-4">
         <div className="flex items-center justify-between px-1">
-          <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-rose-400" />
-            <span>Instant Voice Command Buttons</span>
-          </h3>
-          <span className="text-[11px] text-zinc-500">Tap to run instantly on laptop</span>
+          <div className="flex items-center gap-2">
+            <span className="p-1 rounded-lg bg-rose-500/10 text-rose-400">
+              <Sparkles className="w-4 h-4" />
+            </span>
+            <h3 className="text-xs sm:text-sm font-bold text-zinc-200 uppercase tracking-wider">
+              Instant Action Buttons
+            </h3>
+          </div>
+          <span className="text-[11px] text-zinc-400 font-medium">Ek click par laptop par run hoga</span>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-3.5">
           {quickVoiceActions.map((group) => (
-            <div key={group.category} className="space-y-1.5">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block px-1">
+            <div key={group.category} className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800/80 shadow-md space-y-2">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block px-1">
                 {group.category}
               </span>
               <div className="flex items-center gap-2 flex-wrap">
@@ -454,9 +474,11 @@ export const AIView: React.FC<AIViewProps> = ({
                       setInputCommand(item.query);
                       handleExecute(item.query);
                     }}
-                    className="py-2 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-semibold text-zinc-200 hover:text-white transition-all active:scale-95 flex items-center gap-2 shadow-sm"
+                    className="py-2.5 px-3.5 rounded-xl bg-zinc-950/80 hover:bg-zinc-800/90 border border-zinc-800 hover:border-zinc-700 text-xs font-semibold text-zinc-200 hover:text-white transition-all active:scale-95 flex items-center gap-2.5 shadow-sm group"
                   >
-                    {item.icon}
+                    <span className="p-1 rounded-lg bg-zinc-900 group-hover:scale-110 transition-transform">
+                      {item.icon}
+                    </span>
                     <span>{item.label}</span>
                   </button>
                 ))}

@@ -7,6 +7,7 @@ import { AIView } from './components/views/AIView';
 import { DevicesView } from './components/views/DevicesView';
 import { SettingsTab } from './components/SettingsTab';
 import { PairQRModal } from './components/connection/PairQRModal';
+import { ConnectionDiagnosticsModal } from './components/diagnostics/ConnectionDiagnosticsModal';
 import { ScreenshotModal } from './components/ScreenshotModal';
 import { 
   AppSettings, 

@@ -531,12 +531,14 @@ class WebMouseServer:
                     except Exception as e:
                         print(f"Error quick control: {e}")
 
-                # 18. Link Sharing
-                elif msg_type == "share_link":
+                # 18. Link Sharing & Open URL
+                elif msg_type in ("open_url", "share_link"):
                     url = str(data.get("url", ""))
                     if url:
                         try:
                             import webbrowser
+                            if not url.startswith("http://") and not url.startswith("https://") and not ":" in url:
+                                url = f"https://{url}"
                             webbrowser.open(url)
                             await websocket.send(json.dumps({
                                 "type": "notification",
@@ -544,6 +546,71 @@ class WebMouseServer:
                             }))
                         except Exception as e:
                             print(f"Error opening link: {e}")
+
+                # 18b. Open Application (YouTube, Chrome, Notepad, etc.)
+                elif msg_type == "open_app":
+                    app_name = str(data.get("app", "")).lower().strip()
+                    try:
+                        import webbrowser, os, subprocess
+                        if app_name in ("youtube", "yt", "youtube.com"):
+                            webbrowser.open("https://www.youtube.com")
+                        elif app_name in ("google", "search"):
+                            webbrowser.open("https://www.google.com")
+                        elif app_name in ("spotify", "music"):
+                            try:
+                                os.startfile("spotify:")
+                            except Exception:
+                                webbrowser.open("https://open.spotify.com")
+                        elif app_name in ("whatsapp", "wa"):
+                            try:
+                                os.startfile("whatsapp:")
+                            except Exception:
+                                webbrowser.open("https://web.whatsapp.com")
+                        elif app_name in ("chrome", "google-chrome", "google chrome"):
+                            subprocess.Popen('start "" "chrome"', shell=True)
+                        elif app_name in ("edge", "msedge"):
+                            subprocess.Popen('start "" "msedge"', shell=True)
+                        elif app_name in ("notepad", "notepad.exe"):
+                            subprocess.Popen('start "" "notepad"', shell=True)
+                        elif app_name in ("calc", "calculator"):
+                            subprocess.Popen('start "" "calc"', shell=True)
+                        elif app_name in ("explorer", "files"):
+                            subprocess.Popen('start "" "explorer"', shell=True)
+                        elif app_name in ("taskmgr", "task manager"):
+                            subprocess.Popen('start "" "taskmgr"', shell=True)
+                        elif app_name in ("paint", "mspaint"):
+                            subprocess.Popen('start "" "mspaint"', shell=True)
+                        elif app_name in ("settings", "control"):
+                            subprocess.Popen('start ms-settings:', shell=True)
+                        else:
+                            try:
+                                subprocess.Popen(f'start "" "{app_name}"', shell=True)
+                            except Exception:
+                                webbrowser.open(f"https://www.google.com/search?q={app_name}")
+                        await websocket.send(json.dumps({
+                            "type": "notification",
+                            "message": f"Opened application: {app_name}"
+                        }))
+                    except Exception as e:
+                        print(f"Error opening app {app_name}: {e}")
+
+                # 18c. Voice Command execution
+                elif msg_type == "voice_command":
+                    query = str(data.get("query", "")).strip().lower()
+                    target = str(data.get("target", ""))
+                    action = str(data.get("action", ""))
+                    import webbrowser, subprocess
+                    try:
+                        if "youtube" in query:
+                            webbrowser.open("https://www.youtube.com")
+                        elif "chrome" in query:
+                            subprocess.Popen('start "" "chrome"', shell=True)
+                        elif target and action == "open_url":
+                            webbrowser.open(target)
+                        else:
+                            subprocess.Popen(f'start "" "{query}"', shell=True)
+                    except Exception as e:
+                        print(f"Error executing voice command: {e}")
 
                 # 19. Clipboard Sharing
                 elif msg_type == "clipboard":

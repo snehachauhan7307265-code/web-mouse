@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Smartphone, Sliders, Vibrate, Moon, Sun, Shield, Info, Terminal, Trash2, Download, Monitor, Check, RotateCcw, HelpCircle } from 'lucide-react';
+import { Smartphone, Sliders, Vibrate, Moon, Sun, Shield, Info, Terminal, Trash2, Download, Monitor, Check, RotateCcw, HelpCircle, Activity, Zap } from 'lucide-react';
 import { AppSettings, ConnectionConfig, LogEntry } from '../types';
 import { triggerHaptic } from '../services/websocketService';
 
@@ -11,6 +11,7 @@ interface SettingsTabProps {
   logs: LogEntry[];
   onClearLogs: () => void;
   onOpenHelperGuide: () => void;
+  onOpenDiagnostics?: () => void;
 }
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
@@ -21,6 +22,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   logs,
   onClearLogs,
   onOpenHelperGuide,
+  onOpenDiagnostics,
 }) => {
   const [showLogs, setShowLogs] = useState(false);
 
@@ -158,6 +160,28 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             />
           </button>
         </div>
+      </div>
+
+      {/* Connection Diagnostics & Real Input Test Mode (Section 9 & 10) */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-950/40 to-purple-950/30 border border-indigo-500/30 space-y-3 shadow-md flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400">
+            <Activity className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">Connection Diagnostics &amp; Test Mode</h3>
+            <p className="text-xs text-zinc-400 mt-0.5">Test real mouse cursor, left/right clicks, keyboard, and reconnect recovery</p>
+          </div>
+        </div>
+        {onOpenDiagnostics && (
+          <button
+            onClick={onOpenDiagnostics}
+            className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/25 transition-all flex items-center gap-1.5 shrink-0"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            <span>Run Tests</span>
+          </button>
+        )}
       </div>
 
       {/* Helper Script Guide */}

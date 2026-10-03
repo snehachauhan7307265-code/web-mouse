@@ -1,6 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, RefreshCw, Upload, CheckCircle2, ShieldCheck, Laptop, AlertCircle } from 'lucide-react';
+import { 
+  X, 
+  Camera, 
+  RefreshCw, 
+  Upload, 
+  CheckCircle2, 
+  ShieldCheck, 
+  Laptop, 
+  AlertCircle, 
+  SwitchCamera, 
+  Key, 
+  QrCode,
+  Link,
+  ChevronRight
+} from 'lucide-react';
 import { QRPairPayload } from '../../types';
 import { connectionManager } from '../../services/connectionManager';
 
@@ -11,19 +25,31 @@ interface PairQRModalProps {
 }
 
 export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPairSuccess }) => {
+  const [activeTab, setActiveTab] = useState<'camera' | 'manual'>('camera');
   const [step, setStep] = useState<'scanning' | 'preview' | 'pairing' | 'success'>('scanning');
   const [scannedPayload, setScannedPayload] = useState<QRPairPayload | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+
+  // Manual fallback inputs
+  const [manualHost, setManualHost] = useState('');
+  const [manualPort, setManualPort] = useState('8765');
+  const [manualToken, setManualToken] = useState('');
+  const [manualName, setManualName] = useState('My Laptop');
+  const [jsonPaste, setJsonPaste] = useState('');
+
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isStoppingRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
       setStep('scanning');
+      setActiveTab('camera');
       setScannedPayload(null);
       setErrorMessage(null);
-      startScanner();
+      startScanner('environment');
     } else {
       stopScanner();
     }
@@ -32,53 +58,101 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
     };
   }, [isOpen]);
 
-  const startScanner = async () => {
+  const disarmReaderVideos = () => {
+    try {
+      const videos = document.querySelectorAll('#qr-modal-reader video');
+      videos.forEach((v: any) => {
+        v.onabort = (e: any) => e?.stopPropagation?.();
+        v.onerror = (e: any) => e?.stopPropagation?.();
+      });
+    } catch {}
+  };
+
+  const startScanner = async (requestedFacing = facingMode) => {
     try {
       setErrorMessage(null);
-      // Wait for DOM element
+      await stopScanner();
+
+      // Wait a tick for DOM element to mount
       setTimeout(async () => {
         const qrElement = document.getElementById('qr-modal-reader');
         if (!qrElement) return;
 
-        if (scannerRef.current) {
-          try {
-            await scannerRef.current.stop();
-          } catch {}
-          scannerRef.current = null;
-        }
-
+        isStoppingRef.current = false;
         const html5QrCode = new Html5Qrcode('qr-modal-reader');
         scannerRef.current = html5QrCode;
 
-        try {
-          const cameras = await Html5Qrcode.getCameras();
-          if (!cameras || cameras.length === 0) {
-            setErrorMessage('No camera found on this device. You can upload a QR screenshot.');
-            return;
-          }
+        // Disarm video abort errors continuously
+        const interval = setInterval(disarmReaderVideos, 300);
 
-          // Prefer back camera on mobile
-          const cameraId = cameras.length > 1 ? cameras[cameras.length - 1].id : cameras[0].id;
+        const config = {
+          fps: 15,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+        };
+
+        try {
+          // Attempt back camera (environment)
           await html5QrCode.start(
-            cameraId,
-            { fps: 10, qrbox: { width: 250, height: 250 } },
+            { facingMode: requestedFacing },
+            config,
             (decodedText) => {
+              clearInterval(interval);
               handleDecodedText(decodedText);
             },
             () => {}
           );
           setIsCameraActive(true);
-        } catch (err: any) {
-          console.warn('[PairQRModal] Camera start error:', err);
-          setErrorMessage('Camera access denied or unavailable in this view. Use Upload QR Screenshot below.');
+          setFacingMode(requestedFacing);
+        } catch (errFacing) {
+          console.warn('[PairQRModal] Primary facing mode failed, trying fallback:', errFacing);
+          try {
+            // Alternate facing mode
+            const altFacing = requestedFacing === 'environment' ? 'user' : 'environment';
+            await html5QrCode.start(
+              { facingMode: altFacing },
+              config,
+              (decodedText) => {
+                clearInterval(interval);
+                handleDecodedText(decodedText);
+              },
+              () => {}
+            );
+            setIsCameraActive(true);
+            setFacingMode(altFacing);
+          } catch (errAlt) {
+            // Try getCameras
+            const cameras = await Html5Qrcode.getCameras().catch(() => []);
+            if (cameras && cameras.length > 0) {
+              const camId = cameras.length > 1 ? cameras[cameras.length - 1].id : cameras[0].id;
+              await html5QrCode.start(
+                camId,
+                config,
+                (decodedText) => {
+                  clearInterval(interval);
+                  handleDecodedText(decodedText);
+                },
+                () => {}
+              );
+              setIsCameraActive(true);
+            } else {
+              throw errAlt;
+            }
+          }
         }
-      }, 100);
+      }, 120);
     } catch (e: any) {
-      setErrorMessage(e?.message || 'Failed to start camera');
+      console.warn('[PairQRModal] Scanner error:', e);
+      setIsCameraActive(false);
+      setErrorMessage(
+        'Camera is unavailable or permission denied. You can take a photo of the QR code or use Manual IP.'
+      );
     }
   };
 
   const stopScanner = async () => {
+    isStoppingRef.current = true;
+    disarmReaderVideos();
     if (scannerRef.current) {
       try {
         if (scannerRef.current.isScanning) {
@@ -91,16 +165,19 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
     setIsCameraActive(false);
   };
 
+  const toggleCameraFacing = async () => {
+    const nextFacing = facingMode === 'environment' ? 'user' : 'environment';
+    await startScanner(nextFacing);
+  };
+
   const handleDecodedText = (text: string) => {
     try {
       const trimmed = text.trim();
       let parsed: any = null;
 
-      // Handle direct JSON
       if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
         parsed = JSON.parse(trimmed);
       } else {
-        // Check for URL containing json or params
         const urlMatch = trimmed.match(/webmouse:\/\/(.+)/i) || trimmed.match(/https?:\/\/[^\s]+[?&]pair=([^&]+)/i);
         if (urlMatch) {
           try {
@@ -110,11 +187,11 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
       }
 
       if (!parsed) {
-        setErrorMessage('Invalid QR Code. Please scan the QR Code shown in the WebMouse Helper window on your PC.');
+        setErrorMessage('This QR code is not a WebMouse pairing code.');
         return;
       }
 
-      // STRICT VALIDATION
+      // VALIDATE QR PAYLOAD (Section 1 & 4)
       if (
         parsed.type !== 'webmouse_pair' ||
         !parsed.deviceId ||
@@ -122,7 +199,7 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
         !parsed.port ||
         !parsed.pairingToken
       ) {
-        setErrorMessage('Incompatible QR Code format. Please ensure you are running the new WebMouse Helper.');
+        setErrorMessage('This QR code is not a valid WebMouse pairing code.');
         return;
       }
 
@@ -136,7 +213,6 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
         pairingToken: String(parsed.pairingToken).trim(),
       };
 
-      // Stop camera and show preview
       stopScanner();
       setScannedPayload(validPayload);
       setStep('preview');
@@ -152,16 +228,51 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
 
     try {
       setErrorMessage(null);
-      const html5QrCode = scannerRef.current || new Html5Qrcode('qr-modal-reader');
+      await stopScanner();
+      const html5QrCode = new Html5Qrcode('qr-modal-reader');
       scannerRef.current = html5QrCode;
 
       const result = await html5QrCode.scanFile(file, true);
       handleDecodedText(result);
     } catch (err) {
-      setErrorMessage('No QR code detected in the selected image. Please try again.');
+      setErrorMessage('No QR code detected in the selected image. Please try another photo.');
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+
+    // Try parsing json paste first
+    if (jsonPaste.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(jsonPaste.trim());
+        if (parsed.host && parsed.pairingToken) {
+          handleDecodedText(jsonPaste.trim());
+          return;
+        }
+      } catch {}
+    }
+
+    if (!manualHost.trim() || !manualToken.trim()) {
+      setErrorMessage('Please enter the PC IP address and pairing token shown on your PC screen.');
+      return;
+    }
+
+    const payload: QRPairPayload = {
+      type: 'webmouse_pair',
+      version: 1,
+      deviceId: 'pc-' + manualHost.replace(/\./g, '-'),
+      deviceName: manualName.trim() || 'My Laptop',
+      host: manualHost.trim(),
+      port: parseInt(manualPort, 10) || 8765,
+      pairingToken: manualToken.trim(),
+    };
+
+    setScannedPayload(payload);
+    setStep('preview');
   };
 
   const handleTrustAndConnect = async () => {
@@ -178,7 +289,7 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
       }, 1200);
     } else {
       setStep('preview');
-      setErrorMessage('Pairing failed. Make sure your PC and phone are on the same Wi-Fi and WebMouse Helper is running.');
+      setErrorMessage('Pairing failed. Make sure your PC and phone are on the same Wi-Fi or Mobile Hotspot.');
     }
   };
 
@@ -198,7 +309,7 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
                 Pair Windows PC
               </h2>
               <p className="text-[11px] text-zinc-400">
-                Scan the QR code shown in WebMouse Helper
+                Install WebMouse Helper &rarr; Scan QR &rarr; Trust Device
               </p>
             </div>
           </div>
@@ -210,29 +321,76 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
           </button>
         </div>
 
+        {/* Mode Switch Tabs (Scanner vs Manual) */}
+        {step === 'scanning' && (
+          <div className="flex items-center border-b border-zinc-800/80 bg-zinc-950 px-4 pt-2">
+            <button
+              onClick={() => {
+                setActiveTab('camera');
+                startScanner();
+              }}
+              className={`flex-1 py-2 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1.5 ${
+                activeTab === 'camera'
+                  ? 'border-indigo-500 text-white'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>Camera QR Scanner</span>
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('manual');
+                stopScanner();
+              }}
+              className={`flex-1 py-2 text-xs font-bold border-b-2 transition-all flex items-center justify-center gap-1.5 ${
+                activeTab === 'manual'
+                  ? 'border-indigo-500 text-white'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>Manual IP / Token</span>
+            </button>
+          </div>
+        )}
+
         {/* Content Area */}
         <div className="p-5 sm:p-6 space-y-4">
-          {/* STEP 1: SCANNING */}
-          {step === 'scanning' && (
+          {/* STEP 1: SCANNING / CAMERA */}
+          {step === 'scanning' && activeTab === 'camera' && (
             <div className="space-y-4">
               <div className="relative rounded-2xl overflow-hidden bg-black aspect-square border border-zinc-800 flex items-center justify-center">
                 <div id="qr-modal-reader" className="w-full h-full" />
 
                 {!isCameraActive && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-zinc-950/90 gap-3">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-zinc-950/95 gap-3 z-10">
                     <Camera className="w-10 h-10 text-indigo-400 animate-pulse" />
-                    <p className="text-xs text-zinc-300">
-                      Point camera at the QR code in the WebMouse Helper window on your PC screen.
+                    <p className="text-xs text-zinc-300 max-w-xs">
+                      Tap below to grant camera access and scan the QR code on your PC screen.
                     </p>
                     <button
                       type="button"
-                      onClick={startScanner}
-                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-md transition-all flex items-center gap-1.5"
+                      onClick={() => startScanner()}
+                      className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white shadow-md transition-all flex items-center gap-1.5"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                       <span>Start Camera</span>
                     </button>
                   </div>
+                )}
+
+                {/* Flip camera control overlay */}
+                {isCameraActive && (
+                  <button
+                    type="button"
+                    onClick={toggleCameraFacing}
+                    className="absolute top-3 right-3 p-2 rounded-xl bg-black/60 hover:bg-black/80 text-white backdrop-blur-md border border-white/10 text-xs transition-all z-20 flex items-center gap-1"
+                    title="Switch camera"
+                  >
+                    <SwitchCamera className="w-4 h-4" />
+                    <span className="text-[10px] hidden sm:inline">Flip</span>
+                  </button>
                 )}
               </div>
 
@@ -244,14 +402,14 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
               )}
 
               {/* Upload screenshot alternative */}
-              <div className="flex items-center justify-between pt-1">
+              <div className="pt-1">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className="w-full py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-xs font-semibold text-zinc-200 border border-zinc-700 transition-all flex items-center justify-center gap-2"
                 >
                   <Upload className="w-4 h-4 text-indigo-400" />
-                  <span>Upload QR Image / Screenshot</span>
+                  <span>Upload QR Screenshot / Take Photo</span>
                 </button>
                 <input
                   ref={fileInputRef}
@@ -264,28 +422,88 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
             </div>
           )}
 
-          {/* STEP 2: PREVIEW — EXACT REQUIRED FORMAT */}
+          {/* STEP 1B: MANUAL INPUT FALLBACK */}
+          {step === 'scanning' && activeTab === 'manual' && (
+            <form onSubmit={handleManualSubmit} className="space-y-3 animate-in fade-in duration-150">
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-zinc-400">PC IP Address</label>
+                <input
+                  type="text"
+                  value={manualHost}
+                  onChange={(e) => setManualHost(e.target.value)}
+                  placeholder="e.g. 192.168.1.15"
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-zinc-400">Port</label>
+                  <input
+                    type="number"
+                    value={manualPort}
+                    onChange={(e) => setManualPort(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-zinc-400">Device Name</label>
+                  <input
+                    type="text"
+                    value={manualName}
+                    onChange={(e) => setManualName(e.target.value)}
+                    placeholder="My Laptop"
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-zinc-400">Pairing Token (From Helper Window)</label>
+                <input
+                  type="text"
+                  value={manualToken}
+                  onChange={(e) => setManualToken(e.target.value)}
+                  placeholder="e.g. secure-random-token"
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {errorMessage && (
+                <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
+                  {errorMessage}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all mt-2"
+              >
+                Continue to Trust Device
+              </button>
+            </form>
+          )}
+
+          {/* STEP 2: PREVIEW — EXACT SPECIFICATION (Section 1 & 5) */}
           {step === 'preview' && scannedPayload && (
             <div className="space-y-4 animate-in fade-in duration-200">
-              <div className="p-5 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-                      <Laptop className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-white tracking-tight">
-                        {scannedPayload.deviceName}
-                      </h3>
-                      <p className="text-xs text-zinc-400">
-                        Windows PC found
-                      </p>
-                    </div>
+              <div className="p-5 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                    <Laptop className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white tracking-tight">
+                      💻 {scannedPayload.deviceName}
+                    </h3>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      Windows PC found
+                    </p>
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs">
-                  <span className="text-zinc-400">Trust Status:</span>
+                <div className="pt-3 border-t border-zinc-800 flex items-center justify-between text-xs">
+                  <span className="text-zinc-400">Security Status:</span>
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 font-semibold text-[11px]">
                     <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                     <span>🟡 Not Trusted</span>
@@ -305,7 +523,7 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
                   type="button"
                   id="btn-trust-and-connect"
                   onClick={handleTrustAndConnect}
-                  className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-[0.98] text-white font-bold text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2"
+                  className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-bold text-sm shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2"
                 >
                   <ShieldCheck className="w-4 h-4" />
                   <span>[ TRUST &amp; CONNECT ]</span>
@@ -319,7 +537,7 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
                   }}
                   className="w-full py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-xs font-semibold text-zinc-300 border border-zinc-700 transition-all text-center"
                 >
-                  Scan Different QR
+                  Scan Again
                 </button>
               </div>
             </div>
@@ -338,7 +556,7 @@ export const PairQRModal: React.FC<PairQRModalProps> = ({ isOpen, onClose, onPai
             </div>
           )}
 
-          {/* STEP 4: SUCCESS — EXACT REQUIRED FORMAT */}
+          {/* STEP 4: SUCCESS — EXACT SPECIFICATION (Section 1 & 6) */}
           {step === 'success' && scannedPayload && (
             <div className="py-8 text-center space-y-4 animate-in zoom-in-95 duration-200">
               <div className="w-14 h-14 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 mx-auto flex items-center justify-center">
