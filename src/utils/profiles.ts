@@ -70,6 +70,17 @@ export function saveComputerProfiles(profiles: ComputerProfile[]): void {
   }
 }
 
+export function clearAllComputerProfiles(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('webmouse_paired_device');
+    localStorage.removeItem('webmouse_config');
+    localStorage.removeItem('webmouse_trusted_token');
+  } catch (e) {
+    console.error('Failed to clear computer profiles:', e);
+  }
+}
+
 export function upsertComputerProfile(profileData: Partial<ComputerProfile> & { host: string }): ComputerProfile[] {
   const currentProfiles = getComputerProfiles();
   const profiles = Array.isArray(currentProfiles) ? [...currentProfiles] : [];

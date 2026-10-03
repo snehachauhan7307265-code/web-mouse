@@ -238,6 +238,22 @@ class DeviceManagerClass {
     }
   }
 
+  public clearAllDevices(): void {
+    this.devices = [];
+    this.activeDeviceId = null;
+    try {
+      localStorage.removeItem(DEVICES_STORAGE_KEY);
+      localStorage.removeItem(ACTIVE_DEVICE_STORAGE_KEY);
+      localStorage.removeItem(LEGACY_PROFILES_KEY);
+      localStorage.removeItem('webmouse_paired_device');
+      localStorage.removeItem('webmouse_config');
+      localStorage.removeItem('webmouse_trusted_token');
+    } catch (e) {
+      console.error('[DeviceManager] Error clearing devices:', e);
+    }
+    this.notify();
+  }
+
   private notify() {
     const active = this.getActiveDevice();
     for (const listener of this.listeners) {

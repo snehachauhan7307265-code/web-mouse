@@ -1,3 +1,33 @@
+export type ConnectionState =
+  | 'DISCONNECTED'
+  | 'PAIRING'
+  | 'CONNECTING'
+  | 'CONNECTED'
+  | 'ERROR'
+  | 'RECONNECTING'
+  | 'OFFLINE';
+
+export interface QRPairPayload {
+  type: 'webmouse_pair';
+  version: number;
+  deviceId: string;
+  deviceName: string;
+  host: string;
+  port: number;
+  pairingToken: string;
+}
+
+export interface TrustedDevice {
+  deviceId: string;
+  deviceName: string;
+  host: string;
+  port: number;
+  credential: string;
+  pairedAt: number;
+  lastConnectedAt?: number;
+  isTrusted: boolean;
+}
+
 export type ConnectionStatus =
   | 'disconnected'
   | 'connecting'
