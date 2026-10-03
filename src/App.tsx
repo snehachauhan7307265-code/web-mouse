@@ -330,12 +330,14 @@ export default function App() {
         <AIView
           isConnected={isConnected}
           activeDevice={activeDeviceObject}
+          devices={devicesList}
           onSendMessage={handleSendMessage}
           onNavigateToControl={(mode) => {
             setControlInitialMode(mode);
             setCurrentArea('control');
           }}
           onOpenConnectionModal={() => setIsPairModalOpen(true)}
+          vibrationEnabled={settings.vibration}
         />
       )}
 

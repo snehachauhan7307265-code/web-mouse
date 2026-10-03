@@ -24,6 +24,7 @@ export type AIIntentType =
   | 'send_file'
   | 'quick_share'
   | 'open_url'
+  | 'quick_control'
   | 'device_select'
   | 'device_status'
   | 'cancel'
@@ -85,6 +86,7 @@ export const SAFE_INTENT_ALLOWLIST: ReadonlySet<AIIntentType> = new Set([
   'send_file',
   'quick_share',
   'open_url',
+  'quick_control',
   'device_select',
   'device_status',
   'cancel',
@@ -102,40 +104,82 @@ export interface AllowedAppConfig {
 }
 
 export const ALLOWLISTED_APPLICATIONS_REGISTRY: Record<string, AllowedAppConfig> = {
+  youtube: {
+    displayName: 'YouTube',
+    url: 'https://www.youtube.com',
+    aliases: ['youtube', 'yt', 'youtube.com', 'video', 'videos', 'यूट्यूब', 'यूट्युब'],
+  },
   chrome: {
     displayName: 'Google Chrome',
     binary: 'chrome',
     url: 'https://www.google.com',
-    aliases: ['chrome', 'google chrome', 'browser', 'web browser'],
+    aliases: ['chrome', 'google chrome', 'browser', 'web browser', 'क्रोम', 'गूगल क्रोम'],
+  },
+  google: {
+    displayName: 'Google Search',
+    url: 'https://www.google.com',
+    aliases: ['google', 'google search', 'search', 'गूगल'],
   },
   edge: {
     displayName: 'Microsoft Edge',
     binary: 'msedge',
-    aliases: ['edge', 'microsoft edge', 'ms edge'],
+    aliases: ['edge', 'microsoft edge', 'ms edge', 'एज'],
   },
   notepad: {
     displayName: 'Notepad',
     binary: 'notepad',
-    aliases: ['notepad', 'notes', 'text editor'],
+    aliases: ['notepad', 'notes', 'text editor', 'नोटपैड'],
   },
   calculator: {
     displayName: 'Calculator',
     binary: 'calc',
-    aliases: ['calculator', 'calc'],
+    aliases: ['calculator', 'calc', 'hisab', 'कैलकुलेटर', 'हिसाब'],
   },
   explorer: {
     displayName: 'File Explorer',
     binary: 'explorer',
-    aliases: ['explorer', 'files', 'file explorer', 'my files'],
+    aliases: ['explorer', 'files', 'file explorer', 'my files', 'my computer', 'this pc', 'फ़ाइलें', 'कंप्यूटर'],
   },
   taskmgr: {
     displayName: 'Task Manager',
     binary: 'taskmgr',
-    aliases: ['task manager', 'taskmgr', 'processes'],
+    aliases: ['task manager', 'taskmgr', 'processes', 'टास्क मैनेजर'],
   },
-  youtube: {
-    displayName: 'YouTube',
-    url: 'https://www.youtube.com',
-    aliases: ['youtube', 'yt', 'youtube.com'],
+  spotify: {
+    displayName: 'Spotify',
+    binary: 'spotify',
+    url: 'https://open.spotify.com',
+    aliases: ['spotify', 'music app', 'स्पॉटिफ़ाई'],
+  },
+  whatsapp: {
+    displayName: 'WhatsApp',
+    binary: 'whatsapp',
+    url: 'https://web.whatsapp.com',
+    aliases: ['whatsapp', 'wa', 'web whatsapp', 'व्हाट्सएप'],
+  },
+  settings: {
+    displayName: 'Windows Settings',
+    binary: 'ms-settings:',
+    aliases: ['settings', 'setting', 'control panel', 'pc settings', 'सेटिंग्स'],
+  },
+  paint: {
+    displayName: 'Paint',
+    binary: 'mspaint',
+    aliases: ['paint', 'mspaint', 'drawing', 'पेंट'],
+  },
+  word: {
+    displayName: 'Microsoft Word',
+    binary: 'winword',
+    aliases: ['word', 'ms word', 'winword', 'वर्ड'],
+  },
+  excel: {
+    displayName: 'Microsoft Excel',
+    binary: 'excel',
+    aliases: ['excel', 'ms excel', 'एक्सेल'],
+  },
+  powerpoint: {
+    displayName: 'Microsoft PowerPoint',
+    binary: 'powerpnt',
+    aliases: ['powerpoint', 'ppt', 'slides', 'पावरपॉइंट'],
   },
 };

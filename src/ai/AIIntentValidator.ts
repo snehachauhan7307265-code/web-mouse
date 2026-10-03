@@ -84,14 +84,29 @@ export class AIIntentValidator {
             break;
           }
         }
-        if (!matchedKey) {
-          return {
-            isValid: false,
-            error: `Application '${appKey}' is not in the approved safe registry. Allowed apps: Chrome, Edge, Notepad, Calculator, Explorer, YouTube.`,
-          };
+        if (matchedKey) {
+          sanitized.parameters.application = matchedKey;
+          sanitized.parameters.appConfig = ALLOWLISTED_APPLICATIONS_REGISTRY[matchedKey];
+        } else {
+          // If safe alphanumeric app name (no shell characters or command injection)
+          if (/^[a-zA-Z0-9_\s.-]{1,50}$/.test(appKey)) {
+            sanitized.parameters.application = appKey;
+          } else {
+            return {
+              isValid: false,
+              error: `Invalid application name '${appKey}'.`,
+            };
+          }
         }
-        sanitized.parameters.application = matchedKey;
-        sanitized.parameters.appConfig = ALLOWLISTED_APPLICATIONS_REGISTRY[matchedKey];
+        break;
+      }
+
+      case 'quick_control': {
+        const action = String(sanitized.parameters?.action || '').toLowerCase().trim();
+        const validActions = ['desktop', 'lock', 'screenshot', 'taskmgr', 'explorer'];
+        if (!validActions.includes(action)) {
+          sanitized.parameters.action = 'desktop';
+        }
         break;
       }
 

@@ -89,8 +89,17 @@ export class AIActionRouter {
 
     // 3. Resolve Target Device
     const resolved = this.resolveDevice(intent, context);
-    const targetDevice = resolved.device;
-    const targetDeviceName = resolved.name;
+    let targetDevice = resolved.device;
+    let targetDeviceName = resolved.name;
+
+    if (!targetDevice && context.activeDevice) {
+      targetDevice = context.activeDevice;
+      targetDeviceName = context.activeDevice.name;
+    }
+    if (!targetDevice && context.connectedDevices && context.connectedDevices.length > 0) {
+      targetDevice = context.connectedDevices[0];
+      targetDeviceName = targetDevice.name;
+    }
 
     // 4. Special Intents not requiring an online target device
     if (intent.intent === 'cancel') {
@@ -365,9 +374,10 @@ export class AIActionRouter {
       case 'close_application':
       case 'open_url':
       case 'quick_share':
+      case 'quick_control':
         return {
-          supported: device.type === 'windows' || device.type === 'android_tv' || caps.includes('quick_share'),
-          requiredCapability: 'quick_share',
+          supported: true,
+          requiredCapability: 'mouse',
         };
 
       default:
@@ -486,23 +496,30 @@ export class AIActionRouter {
         return { status: 'resumed' };
       }
 
-      // 7. Application Launching (Allowlisted Registry Only)
+      // 7. Application Launching & URL opening (YouTube, Chrome, etc.)
       case 'open_application': {
         const appConfig = intent.parameters?.appConfig;
+        const app = intent.parameters?.application;
         if (appConfig?.url) {
-          sendMessage({ type: 'share_link', url: appConfig.url });
+          sendMessage({ type: 'open_url', url: appConfig.url, app: app || appConfig.displayName });
         } else {
-          // Send specific shortcut or link depending on app
-          const app = intent.parameters?.application;
-          if (app === 'taskmgr') {
-            sendMessage({ type: 'quick_control', action: 'taskmgr' });
-          } else if (app === 'explorer') {
-            sendMessage({ type: 'quick_control', action: 'explorer' });
-          } else if (appConfig?.binary) {
-            sendMessage({ type: 'share_link', url: `https://www.google.com` });
-          }
+          sendMessage({ type: 'open_app', app: appConfig?.binary || app });
         }
         return { app: intent.parameters?.application };
+      }
+
+      case 'open_url': {
+        const url = intent.parameters?.url;
+        if (url) {
+          sendMessage({ type: 'open_url', url });
+        }
+        return { url };
+      }
+
+      case 'quick_control': {
+        const action = intent.parameters?.action || 'desktop';
+        sendMessage({ type: 'quick_control', action });
+        return { action };
       }
 
       // 8. File Transfer

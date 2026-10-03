@@ -150,72 +150,174 @@ export class AIIntentParser {
       };
     }
 
-    // D. Open Applications (Allowlisted only - English & Hindi/Hinglish)
+    // D1. Windows Quick System Controls (Lock, Desktop, Screenshot)
+    if (/(lock\s+(laptop|pc|screen|computer)|(laptop|pc|screen|computer)\s+(lock\s+karo|lock\s+kar\s+de|lock\s+kar\s+do|lock)|^\s*lock\s*$|^\s*लॉक\s*(करो)?\s*$)/i.test(text)) {
+      return {
+        intent: 'quick_control' as any,
+        targetDevice: targetResolution.deviceName,
+        parameters: { action: 'lock' },
+        confidence: 0.98,
+        requiresConfirmation: false,
+        rawQuery: raw,
+        explanation: 'Lock Windows workstation',
+      };
+    }
+
+    if (/(show\s+desktop|desktop\s+dikhao|sab\s+minimize\s+karo|minimize\s+all|^\s*desktop\s*$|^\s*डेस्कटॉप\s*$)/i.test(text)) {
+      return {
+        intent: 'quick_control' as any,
+        targetDevice: targetResolution.deviceName,
+        parameters: { action: 'desktop' },
+        confidence: 0.98,
+        requiresConfirmation: false,
+        rawQuery: raw,
+        explanation: 'Show Desktop (Minimize windows)',
+      };
+    }
+
+    if (/(take\s+screenshot|screenshot\s+lo|screenshot\s+le\s+lo|capture\s+screen|^\s*screenshot\s*$|^\s*स्क्रीनशॉट\s*$)/i.test(text)) {
+      return {
+        intent: 'quick_control' as any,
+        targetDevice: targetResolution.deviceName,
+        parameters: { action: 'screenshot' },
+        confidence: 0.98,
+        requiresConfirmation: false,
+        rawQuery: raw,
+        explanation: 'Take Windows screenshot',
+      };
+    }
+
+    // D2. YouTube Search or Specific Video/Song Playback on YouTube
+    // e.g. "youtube par arijit singh ke gaane chalao" or "youtube par cartoon chalao"
+    if (
+      /youtube\s+(par|pe)\s+(.+?)\s+(chalao|chalu\s+karo|chalu\s+kar\s+de|chalu\s+kar\s+do|search\s+karo|play\s+karo|laga\s+do|lagao)/i.test(text) ||
+      /(play|search)\s+(.+?)\s+on\s+youtube/i.test(text)
+    ) {
+      let query = '';
+      const m1 = text.match(/youtube\s+(par|pe)\s+(.+?)\s+(chalao|chalu\s+karo|chalu\s+kar\s+de|chalu\s+kar\s+do|search\s+karo|play\s+karo|laga\s+do|lagao)/i);
+      const m2 = text.match(/(play|search)\s+(.+?)\s+on\s+youtube/i);
+      if (m1) query = m1[2].trim();
+      else if (m2) query = m2[2].trim();
+
+      if (query) {
+        const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+        return {
+          intent: 'open_url',
+          targetDevice: targetResolution.deviceName,
+          parameters: { url: searchUrl, query },
+          confidence: 0.98,
+          requiresConfirmation: false,
+          rawQuery: raw,
+          explanation: `Playing "${query}" on YouTube`,
+        };
+      }
+    }
+
+    // D3. Google Web Search
+    // e.g. "search python tutorials" or "google par taj mahal search karo"
+    if (
+      /(google|web)\s+(par|pe)\s+(.+?)\s+(search\s+karo|dhundo|dekho)/i.test(text) ||
+      /^search\s+(for\s+)?(.+)/i.test(text) ||
+      /(.+?)\s+(google\s+karo|search\s+karo)/i.test(text)
+    ) {
+      let query = '';
+      const m1 = text.match(/(google|web)\s+(par|pe)\s+(.+?)\s+(search\s+karo|dhundo|dekho)/i);
+      const m2 = text.match(/^search\s+(for\s+)?(.+)/i);
+      const m3 = text.match(/(.+?)\s+(google\s+karo|search\s+karo)/i);
+      if (m1) query = m1[3].trim();
+      else if (m2) query = m2[2].trim();
+      else if (m3) query = m3[1].trim();
+
+      if (query && !query.includes('slide') && !query.includes('device')) {
+        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+        return {
+          intent: 'open_url',
+          targetDevice: targetResolution.deviceName,
+          parameters: { url: searchUrl, query },
+          confidence: 0.96,
+          requiresConfirmation: false,
+          rawQuery: raw,
+          explanation: `Searching "${query}" on Google`,
+        };
+      }
+    }
+
+    // D4. Open Applications & Websites (English, Hindi, Hinglish, Devanagari)
+    // Check direct mention: e.g. "youtube", "chrome", "notepad", "calculator", "यूट्यूब", "क्रोम"
+    const cleanedText = text.replace(/^(open|launch|start|run|chalao|chalu\s+karo|chalu\s+kar\s+de|chalu\s+kar\s+do|kholo|khol\s+do|please)\s+/i, '')
+      .replace(/\s+(kholo|khol\s+do|open\s+karo|open\s+kar\s+de|open\s+kar\s+do|chalao|chalu\s+karo|chalu\s+kar\s+de|chalu\s+kar\s+do|start\s+karo|start\s+kar\s+de|run\s+karo|dikhao)$/i, '')
+      .replace(/\s+(on|par|pe)\s+(my\s+)?(laptop|pc|computer)$/i, '')
+      .trim();
+
+    for (const [key, config] of Object.entries(ALLOWLISTED_APPLICATIONS_REGISTRY)) {
+      const isDirectMatch = 
+        key === cleanedText || 
+        config.aliases.some((alias) => alias.toLowerCase() === cleanedText);
+
+      const isSubMatch = 
+        text.includes(key) || 
+        config.aliases.some((alias) => text.includes(alias.toLowerCase()));
+
+      if (isDirectMatch || isSubMatch) {
+        return {
+          intent: 'open_application',
+          targetDevice: targetResolution.deviceName,
+          parameters: { 
+            application: key, 
+            appConfig: config 
+          },
+          confidence: isDirectMatch ? 0.99 : 0.95,
+          requiresConfirmation: false,
+          rawQuery: raw,
+          explanation: `Opening ${config.displayName} on your laptop`,
+        };
+      }
+    }
+
+    // General app launch command fallback
     const isAppLaunchCommand =
-      /(open|launch|start|run)\s+(.+)/i.test(text) ||
-      /(.+?)\s+(kholo|open\s+karo|chalao|start\s+karo)/i.test(text);
+      /(open|launch|start|run|chalao|chalu\s+karo|chalu\s+kar\s+de|chalu\s+kar\s+do|kholo|khol\s+do)\s+(.+)/i.test(text) ||
+      /(.+?)\s+(kholo|khol\s+do|open\s+karo|open\s+kar\s+de|open\s+kar\s+do|chalao|chalu\s+karo|chalu\s+kar\s+de|chalu\s+kar\s+do|start\s+karo|start\s+kar\s+de)/i.test(text);
 
     if (isAppLaunchCommand) {
       let candidateApp = '';
-      if (/(open|launch|start|run)\s+(.+)/i.test(text)) {
-        const match = text.match(/(open|launch|start|run)\s+(.+)/i);
+      if (/(open|launch|start|run|chalao|chalu\s+karo|chalu\s+kar\s+de|chalu\s+kar\s+do|kholo|khol\s+do)\s+(.+)/i.test(text)) {
+        const match = text.match(/(open|launch|start|run|chalao|chalu\s+karo|chalu\s+kar\s+de|chalu\s+kar\s+do|kholo|khol\s+do)\s+(.+)/i);
         candidateApp = match ? match[2].trim() : '';
       } else {
-        const match = text.match(/(.+?)\s+(kholo|open\s+karo|chalao|start\s+karo)/i);
+        const match = text.match(/(.+?)\s+(kholo|khol\s+do|open\s+karo|open\s+kar\s+de|open\s+kar\s+do|chalao|chalu\s+karo|chalu\s+kar\s+de|chalu\s+kar\s+do|start\s+karo|start\s+kar\s+de)/i);
         candidateApp = match ? match[1].trim() : '';
       }
 
-      // Strip prepositions: "on my laptop", "laptop par", "par", etc.
-      let appName = candidateApp
-        .replace(/\s+on\s+(my\s+)?(.+)$/i, '')
-        .replace(/^(my\s+)?(laptop|pc|computer|tv|board)\s+par\s+/i, '')
-        .replace(/\s+par$/i, '')
+      candidateApp = candidateApp
+        .replace(/\s+(on|par|pe)\s+(my\s+)?(laptop|pc|computer|tv|board).*$/i, '')
         .trim();
 
-      // Check presentation mode launch
-      if (appName === 'presentation' || appName === 'presentation mode' || appName === 'slides') {
-        return {
-          intent: 'presentation_start',
-          targetDevice: targetResolution.deviceName,
-          confidence: 0.95,
-          requiresConfirmation: false,
-          rawQuery: raw,
-        };
-      }
-
-      // Check against allowlisted registry
-      for (const [key, config] of Object.entries(ALLOWLISTED_APPLICATIONS_REGISTRY)) {
-        if (
-          key === appName ||
-          config.aliases.some((alias) => appName.includes(alias)) ||
-          appName.includes(key) ||
-          text.includes(key)
-        ) {
-          // If multiple PC devices exist and none was specified
-          const pcDevices = context.connectedDevices.filter((d) => d.type === 'windows' || d.platform === 'windows');
-          if (!targetResolution.deviceName && pcDevices.length > 1) {
-            return {
-              intent: 'open_application',
-              parameters: { application: key },
-              confidence: 0.85,
-              requiresConfirmation: false,
-              rawQuery: raw,
-              missingInformation: 'targetDevice',
-              explanation: `I found ${pcDevices.length} PCs. Which device?`,
-              clarificationOptions: pcDevices.map((d) => d.name),
-            };
-          }
-
+      if (candidateApp) {
+        // If it's a URL or known website
+        if (/^(https?:\/\/|[a-z0-9-]+\.(com|org|net|in|io|co))/i.test(candidateApp)) {
+          const validUrl = candidateApp.startsWith('http') ? candidateApp : `https://${candidateApp}`;
           return {
-            intent: 'open_application',
+            intent: 'open_url',
             targetDevice: targetResolution.deviceName,
-            parameters: { application: key },
+            parameters: { url: validUrl },
             confidence: 0.95,
             requiresConfirmation: false,
             rawQuery: raw,
-            explanation: `Open ${config.displayName}`,
+            explanation: `Opening ${validUrl}`,
           };
         }
+
+        // Generic safe app launch on laptop
+        return {
+          intent: 'open_application',
+          targetDevice: targetResolution.deviceName,
+          parameters: { application: candidateApp },
+          confidence: 0.92,
+          requiresConfirmation: false,
+          rawQuery: raw,
+          explanation: `Launching ${candidateApp} on your laptop`,
+        };
       }
     }
 
@@ -541,6 +643,10 @@ export class AIIntentParser {
     // Fallback to active context device
     if (context.activeDevice) {
       return { deviceName: context.activeDevice.name, device: context.activeDevice };
+    }
+
+    if (devices.length > 0) {
+      return { deviceName: devices[0].name, device: devices[0] };
     }
 
     if (context.lastTargetDevice) {

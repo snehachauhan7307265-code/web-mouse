@@ -28,6 +28,7 @@ import struct
 import secrets
 import threading
 import subprocess
+import webbrowser
 
 # Determine directories
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -205,6 +206,174 @@ class WindowsMouseController:
                 self.user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, wheel_amount, 0)
         else:
             print(f"[Simulated Scroll] dy={dy}")
+
+    def open_application(self, app_name: str) -> bool:
+        """Launches a desktop application or Windows URI cleanly."""
+        clean = (app_name or "").strip().lower()
+        if not clean:
+            return False
+
+        print(f"[Helper] Opening Application: {clean}")
+
+        # 1. Web-based apps
+        if clean in ("youtube", "yt", "youtube.com"):
+            return self.open_url("https://www.youtube.com")
+        if clean in ("google", "search"):
+            return self.open_url("https://www.google.com")
+        if clean in ("spotify", "music"):
+            try:
+                os.startfile("spotify:")
+                return True
+            except Exception:
+                return self.open_url("https://open.spotify.com")
+        if clean in ("whatsapp", "wa"):
+            try:
+                os.startfile("whatsapp:")
+                return True
+            except Exception:
+                return self.open_url("https://web.whatsapp.com")
+
+        # 2. Map common names to executable commands
+        APP_MAP = {
+            "chrome": ["chrome", "google-chrome", "chrome.exe"],
+            "edge": ["msedge", "msedge.exe"],
+            "notepad": ["notepad", "notepad.exe"],
+            "calc": ["calc", "calc.exe", "calculator:"],
+            "calculator": ["calc", "calc.exe", "calculator:"],
+            "explorer": ["explorer", "explorer.exe"],
+            "taskmgr": ["taskmgr", "taskmgr.exe"],
+            "paint": ["mspaint", "mspaint.exe"],
+            "settings": ["ms-settings:"],
+            "cmd": ["cmd", "cmd.exe"],
+            "word": ["winword", "winword.exe"],
+            "excel": ["excel", "excel.exe"],
+            "powerpoint": ["powerpnt", "powerpnt.exe"],
+        }
+
+        candidates = APP_MAP.get(clean, [clean])
+
+        if hasattr(os, "startfile"):
+            for cand in candidates:
+                try:
+                    os.startfile(cand)
+                    return True
+                except Exception:
+                    pass
+
+        # Try subprocess start
+        for cand in candidates:
+            try:
+                subprocess.Popen(f'start "" "{cand}"', shell=True)
+                return True
+            except Exception:
+                pass
+
+        # If not an executable, fallback to web search
+        return self.open_url(f"https://www.google.com/search?q={clean}")
+
+    def open_url(self, url: str) -> bool:
+        """Opens URL in system default browser immediately."""
+        clean_url = (url or "").strip()
+        if not clean_url:
+            return False
+        if not clean_url.startswith("http://") and not clean_url.startswith("https://") and not ":" in clean_url:
+            clean_url = f"https://{clean_url}"
+        print(f"[Helper] Opening URL: {clean_url}")
+        try:
+            webbrowser.open(clean_url)
+            return True
+        except Exception as e:
+            print(f"[Helper] Error opening URL: {e}")
+            return False
+
+    def media_control(self, action: str):
+        """Controls Windows media & volume using user32.dll keybd_event."""
+        act = (action or "").lower().strip()
+        VK_MAP = {
+            "playpause": 0xB3,
+            "play": 0xB3,
+            "pause": 0xB3,
+            "volumemute": 0xAD,
+            "mute": 0xAD,
+            "volumedown": 0xAE,
+            "volumeup": 0xAF,
+            "nexttrack": 0xB0,
+            "next": 0xB0,
+            "prevtrack": 0xB1,
+            "prev": 0xB1,
+            "stop": 0xB2,
+        }
+        vk = VK_MAP.get(act)
+        if vk and self.user32:
+            self.user32.keybd_event(vk, 0, 0, 0)
+            time.sleep(0.02)
+            self.user32.keybd_event(vk, 0, 2, 0) # KEYEVENTF_KEYUP = 2
+            print(f"[Helper] Media Control: {act}")
+        else:
+            print(f"[Helper] Simulated Media Control: {act}")
+
+    def quick_control(self, action: str):
+        """Controls Windows desktop, lock workstation, screenshot."""
+        act = (action or "").lower().strip()
+        print(f"[Helper] Quick Control: {act}")
+        if act == "desktop":
+            if self.user32:
+                # Win + D
+                VK_LWIN = 0x5B
+                self.user32.keybd_event(VK_LWIN, 0, 0, 0)
+                self.user32.keybd_event(ord('D'), 0, 0, 0)
+                time.sleep(0.02)
+                self.user32.keybd_event(ord('D'), 0, 2, 0)
+                self.user32.keybd_event(VK_LWIN, 0, 2, 0)
+        elif act == "lock":
+            if self.user32:
+                self.user32.LockWorkStation()
+        elif act == "screenshot":
+            if self.user32:
+                # VK_SNAPSHOT = 0x2C
+                self.user32.keybd_event(0x2C, 0, 0, 0)
+                time.sleep(0.02)
+                self.user32.keybd_event(0x2C, 0, 2, 0)
+        elif act == "taskmgr":
+            self.open_application("taskmgr")
+        elif act == "explorer":
+            self.open_application("explorer")
+
+    def type_text(self, text: str):
+        """Types string into currently focused Windows window."""
+        if not text:
+            return
+        if self.user32:
+            for char in text:
+                vk = ord(char)
+                self.user32.keybd_event(0, vk, 4, 0) # KEYEVENTF_UNICODE = 4
+                self.user32.keybd_event(0, vk, 4 | 2, 0) # KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+                time.sleep(0.005)
+        else:
+            print(f"[Helper] Simulated Typing: {text}")
+
+    def press_key(self, key_name: str):
+        """Presses a single key."""
+        k = (key_name or "").lower().strip()
+        KEY_VKS = {
+            "enter": 0x0D,
+            "return": 0x0D,
+            "backspace": 0x08,
+            "tab": 0x09,
+            "space": 0x20,
+            "escape": 0x1B,
+            "esc": 0x1B,
+            "up": 0x26,
+            "down": 0x28,
+            "left": 0x25,
+            "right": 0x27,
+            "f5": 0x74,
+        }
+        vk = KEY_VKS.get(k)
+        if vk and self.user32:
+            self.user32.keybd_event(vk, 0, 0, 0)
+            time.sleep(0.02)
+            self.user32.keybd_event(vk, 0, 2, 0)
 
 
 # -------------------------------------------------------------
@@ -484,6 +653,41 @@ class ClientConnection:
             dx = data.get("dx", 0)
             dy = data.get("dy", 0)
             self.helper_state.mouse.scroll(dx, dy)
+        elif mtype == "open_app":
+            app = str(data.get("app", "")).strip()
+            ok = self.helper_state.mouse.open_application(app)
+            self.send_json({"type": "app_opened", "app": app, "success": ok})
+        elif mtype in ("open_url", "share_link"):
+            url = str(data.get("url", "")).strip()
+            ok = self.helper_state.mouse.open_url(url)
+            self.send_json({"type": "url_opened", "url": url, "success": ok})
+        elif mtype == "media_control":
+            action = str(data.get("action", "")).strip()
+            self.helper_state.mouse.media_control(action)
+            self.send_json({"type": "media_ok", "action": action, "success": True})
+        elif mtype == "quick_control":
+            action = str(data.get("action", "")).strip()
+            self.helper_state.mouse.quick_control(action)
+            self.send_json({"type": "quick_ok", "action": action, "success": True})
+        elif mtype == "type_text":
+            text = str(data.get("text", ""))
+            self.helper_state.mouse.type_text(text)
+            self.send_json({"type": "text_ok", "length": len(text), "success": True})
+        elif mtype == "key":
+            key_name = str(data.get("key", ""))
+            self.helper_state.mouse.press_key(key_name)
+        elif mtype == "voice_command":
+            # Direct voice command execution
+            query = str(data.get("query", "")).strip()
+            action = str(data.get("action", ""))
+            target = str(data.get("target", ""))
+            if action == "open_url" and target:
+                self.helper_state.mouse.open_url(target)
+            elif action == "open_app" and target:
+                self.helper_state.mouse.open_application(target)
+            else:
+                self.helper_state.mouse.open_application(query)
+            self.send_json({"type": "voice_ok", "query": query, "success": True})
         elif mtype == "ping":
             self.send_json({"type": "pong"})
 
