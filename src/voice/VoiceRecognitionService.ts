@@ -89,6 +89,9 @@ export class VoiceRecognitionService {
         });
       };
 
+      let hasEmittedFinal = false;
+      let lastInterim = '';
+
       recog.onresult = (event: any) => {
         let interim = '';
         let final = '';
@@ -108,6 +111,7 @@ export class VoiceRecognitionService {
         }
 
         if (interim) {
+          lastInterim = interim.trim();
           this.setState('TRANSCRIBING');
           this.interimListeners.forEach((cb) => {
             try { cb(interim.trim()); } catch (e) {}
@@ -115,6 +119,8 @@ export class VoiceRecognitionService {
         }
 
         if (final.trim()) {
+          hasEmittedFinal = true;
+          lastInterim = '';
           this.resultListeners.forEach((cb) => {
             try { cb(final.trim(), Math.min(1, Math.max(0.1, finalConfidence))); } catch (e) {}
           });
@@ -127,7 +133,9 @@ export class VoiceRecognitionService {
         if (event.error === 'not-allowed') {
           errorMessage = 'Microphone permission was denied. Please allow microphone in browser settings.';
         } else if (event.error === 'no-speech') {
-          errorMessage = "No speech detected. Please speak clearly into your phone.";
+          // Normal timeout when user doesn't say anything immediately
+          this.setState('IDLE');
+          return;
         } else if (event.error === 'network') {
           errorMessage = 'Network error during voice recognition. Try again or use one-tap buttons.';
         } else if (event.error === 'aborted') {
@@ -145,6 +153,15 @@ export class VoiceRecognitionService {
 
       recog.onend = () => {
         this.isListening = false;
+        // If final wasn't emitted by browser but interim words were captured, emit now
+        if (!hasEmittedFinal && lastInterim.trim()) {
+          const fallbackText = lastInterim.trim();
+          lastInterim = '';
+          this.resultListeners.forEach((cb) => {
+            try { cb(fallbackText, 0.88); } catch (e) {}
+          });
+        }
+
         if (this.currentState === 'LISTENING' || this.currentState === 'TRANSCRIBING') {
           this.setState('IDLE');
         }

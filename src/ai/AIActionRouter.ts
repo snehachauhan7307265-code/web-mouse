@@ -107,6 +107,8 @@ export class AIActionRouter {
         name: 'My Laptop',
         type: 'windows',
         platform: 'windows',
+        host: '127.0.0.1',
+        port: 8000,
         connectionState: 'connected',
         capabilities: ['mouse', 'keyboard', 'media', 'presentation', 'custom_controls'],
         paired: true,
@@ -516,7 +518,7 @@ export class AIActionRouter {
         if (app === 'youtube' || (!appConfig?.binary && appConfig?.url)) {
           sendMessage({ type: 'open_url', url: appConfig?.url || 'https://www.youtube.com', app: 'YouTube' });
         } else if (appConfig?.binary) {
-          sendMessage({ type: 'open_app', app: appConfig.binary, url: appConfig?.url });
+          sendMessage({ type: 'open_app', app: appConfig.binary });
         } else {
           sendMessage({ type: 'open_app', app: appConfig?.binary || app });
         }

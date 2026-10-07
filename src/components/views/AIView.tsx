@@ -159,13 +159,19 @@ export const AIView: React.FC<AIViewProps> = ({
 
   const handleExecute = async (cmdText?: string) => {
     const textToRun = (cmdText || inputCommand || transcript).trim();
-    if (!textToRun || isProcessing) return;
+    if (!textToRun) return;
+    if (isProcessing && !cmdText) return;
 
     triggerHaptic('medium', vibrationEnabled);
     setIsProcessing(true);
     setLastExecutedCmd(textToRun);
     setStatusType('info');
     setStatusMessage(`Running command: "${textToRun}"...`);
+
+    // Safety timeout to guarantee isProcessing never gets permanently stuck
+    const safetyTimer = setTimeout(() => {
+      setIsProcessing(false);
+    }, 4000);
 
     const effectiveDevices = devices.length > 0 ? devices : (activeDevice ? [activeDevice] : []);
 
@@ -190,6 +196,7 @@ export const AIView: React.FC<AIViewProps> = ({
         callbacks
       );
 
+      clearTimeout(safetyTimer);
       setIsProcessing(false);
       setTranscript('');
       setInputCommand('');
@@ -203,6 +210,7 @@ export const AIView: React.FC<AIViewProps> = ({
         setStatusMessage(result.message || 'Could not execute command');
       }
     } catch (err: any) {
+      clearTimeout(safetyTimer);
       setIsProcessing(false);
       setStatusType('error');
       setStatusMessage(`Error executing command: ${err?.message || err}`);

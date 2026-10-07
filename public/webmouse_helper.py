@@ -28,6 +28,7 @@ import struct
 import secrets
 import threading
 import subprocess
+import webbrowser
 
 # Determine directories
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -51,9 +52,11 @@ MOUSEEVENTF_WHEEL = 0x0800
 # -------------------------------------------------------------
 def get_local_ip() -> str:
     """Auto-detects the active local Wi-Fi / LAN IP address."""
+    # Method 1: UDP connect probe (doesn't send packets, asks OS for route interface)
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.settimeout(0.5)
+        # Connect to common DNS (does not actually transmit packet)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
@@ -62,6 +65,7 @@ def get_local_ip() -> str:
     except Exception:
         pass
 
+    # Method 2: Hostname lookup
     try:
         hostname = socket.gethostname()
         for ip in socket.gethostbyname_ex(hostname)[2]:
@@ -70,6 +74,7 @@ def get_local_ip() -> str:
     except Exception:
         pass
 
+    # Method 3: Windows ipconfig parsing
     if sys.platform == "win32":
         try:
             output = subprocess.check_output("ipconfig", shell=True).decode("latin-1", errors="ignore")
@@ -195,11 +200,256 @@ class WindowsMouseController:
 
     def scroll(self, dx: int, dy: int):
         if self.user32:
+            # 120 units per notch in Windows WHEEL_DELTA
             wheel_amount = int(dy * 120)
             if wheel_amount != 0:
                 self.user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, wheel_amount, 0)
         else:
             print(f"[Simulated Scroll] dy={dy}")
+
+    def open_application(self, app_name: str) -> bool:
+        """Launches a desktop application or Windows URI cleanly."""
+        clean = (app_name or "").strip().lower()
+        if not clean:
+            return False
+
+        print(f"[Helper] Opening Application: {clean}")
+
+        # 1. Web-based apps
+        if clean in ("youtube", "yt", "youtube.com", "gaana", "gana"):
+            return self.open_url("https://www.youtube.com")
+        if clean in ("google", "search"):
+            return self.open_url("https://www.google.com")
+        if clean in ("spotify", "music"):
+            try:
+                os.startfile("spotify:")
+                return True
+            except Exception:
+                return self.open_url("https://open.spotify.com")
+        if clean in ("whatsapp", "wa"):
+            try:
+                os.startfile("whatsapp:")
+                return True
+            except Exception:
+                return self.open_url("https://web.whatsapp.com")
+
+        # 2. Map common names to executable commands
+        APP_MAP = {
+            "chrome": ["chrome", "google-chrome", "chrome.exe"],
+            "edge": ["msedge", "msedge.exe"],
+            "notepad": ["notepad", "notepad.exe"],
+            "calc": ["calc", "calc.exe", "calculator:"],
+            "calculator": ["calc", "calc.exe", "calculator:"],
+            "explorer": ["explorer", "explorer.exe"],
+            "taskmgr": ["taskmgr", "taskmgr.exe"],
+            "paint": ["mspaint", "mspaint.exe"],
+            "settings": ["ms-settings:"],
+            "cmd": ["cmd", "cmd.exe"],
+            "word": ["winword", "winword.exe"],
+            "excel": ["excel", "excel.exe"],
+            "powerpoint": ["powerpnt", "powerpnt.exe"],
+        }
+
+        candidates = APP_MAP.get(clean, [clean])
+
+        if hasattr(os, "startfile"):
+            for cand in candidates:
+                try:
+                    os.startfile(cand)
+                    return True
+                except Exception:
+                    pass
+
+        # Try subprocess start
+        for cand in candidates:
+            try:
+                subprocess.Popen(f'start "" "{cand}"', shell=True)
+                return True
+            except Exception:
+                pass
+
+        # If not an executable, fallback to web search
+        return self.open_url(f"https://www.google.com/search?q={clean}")
+
+    def open_url(self, url: str) -> bool:
+        """Opens URL in system default browser immediately."""
+        clean_url = (url or "").strip()
+        if not clean_url:
+            return False
+        if not clean_url.startswith("http://") and not clean_url.startswith("https://") and not ":" in clean_url:
+            clean_url = f"https://{clean_url}"
+        print(f"[Helper] Opening URL: {clean_url}")
+        try:
+            webbrowser.open(clean_url)
+            return True
+        except Exception as e:
+            print(f"[Helper] Error opening URL: {e}")
+            return False
+
+    def media_control(self, action: str):
+        """Controls Windows media & volume using user32.dll keybd_event."""
+        act = (action or "").lower().strip()
+        VK_MAP = {
+            "playpause": 0xB3,
+            "play": 0xB3,
+            "pause": 0xB3,
+            "volumemute": 0xAD,
+            "mute": 0xAD,
+            "volumedown": 0xAE,
+            "volumeup": 0xAF,
+            "nexttrack": 0xB0,
+            "next": 0xB0,
+            "prevtrack": 0xB1,
+            "prev": 0xB1,
+            "stop": 0xB2,
+        }
+        vk = VK_MAP.get(act)
+        if vk and self.user32:
+            self.user32.keybd_event(vk, 0, 0, 0)
+            time.sleep(0.02)
+            self.user32.keybd_event(vk, 0, 2, 0) # KEYEVENTF_KEYUP = 2
+            print(f"[Helper] Media Control: {act}")
+        else:
+            print(f"[Helper] Simulated Media Control: {act}")
+
+    def quick_control(self, action: str):
+        """Controls Windows desktop, lock workstation, screenshot."""
+        act = (action or "").lower().strip()
+        print(f"[Helper] Quick Control: {act}")
+        if act == "desktop":
+            if self.user32:
+                # Win + D
+                VK_LWIN = 0x5B
+                self.user32.keybd_event(VK_LWIN, 0, 0, 0)
+                self.user32.keybd_event(ord('D'), 0, 0, 0)
+                time.sleep(0.02)
+                self.user32.keybd_event(ord('D'), 0, 2, 0)
+                self.user32.keybd_event(VK_LWIN, 0, 2, 0)
+        elif act == "lock":
+            if self.user32:
+                self.user32.LockWorkStation()
+        elif act == "screenshot":
+            if self.user32:
+                # VK_SNAPSHOT = 0x2C
+                self.user32.keybd_event(0x2C, 0, 0, 0)
+                time.sleep(0.02)
+                self.user32.keybd_event(0x2C, 0, 2, 0)
+        elif act == "taskmgr":
+            self.open_application("taskmgr")
+        elif act == "explorer":
+            self.open_application("explorer")
+
+    def type_text(self, text: str):
+        """Types string into currently focused Windows window."""
+        if not text:
+            return
+        if self.user32:
+            for char in text:
+                vk = ord(char)
+                self.user32.keybd_event(0, vk, 4, 0) # KEYEVENTF_UNICODE = 4
+                self.user32.keybd_event(0, vk, 4 | 2, 0) # KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+                time.sleep(0.005)
+        else:
+            print(f"[Helper] Simulated Typing: {text}")
+
+    def press_key(self, key_name: str):
+        """Presses a single key according to V1 Keyboard requirements."""
+        if not key_name:
+            return
+
+        k = str(key_name).lower().strip()
+        print(f"[Helper] Key Press: {k}")
+
+        KEY_VKS = {
+            "enter": 0x0D,
+            "return": 0x0D,
+            "backspace": 0x08,
+            "tab": 0x09,
+            "space": 0x20,
+            "escape": 0x1B,
+            "esc": 0x1B,
+            "shift": 0x10,
+            "ctrl": 0x11,
+            "control": 0x11,
+            "alt": 0x12,
+            "win": 0x5B,
+            "windows": 0x5B,
+            "delete": 0x2E,
+            "del": 0x2E,
+            "up": 0x26,
+            "down": 0x28,
+            "left": 0x25,
+            "right": 0x27,
+            "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73, "f5": 0x74, "f6": 0x75,
+            "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
+        }
+
+        if self.user32:
+            if k in KEY_VKS:
+                vk = KEY_VKS[k]
+                self.user32.keybd_event(vk, 0, 0, 0)
+                time.sleep(0.015)
+                self.user32.keybd_event(vk, 0, 2, 0)  # KEYEVENTF_KEYUP = 2
+            elif len(key_name) == 1:
+                # Direct character input
+                char_code = ord(key_name)
+                self.user32.keybd_event(0, char_code, 4, 0)  # KEYEVENTF_UNICODE = 4
+                self.user32.keybd_event(0, char_code, 4 | 2, 0)
+        else:
+            print(f"[Simulated Key] {key_name}")
+
+    def press_shortcut(self, keys: list):
+        """Executes a multi-key chord like ['ctrl', 'c'] or ['alt', 'tab'] on Windows."""
+        if not keys:
+            return
+
+        print(f"[Helper] Shortcut: {keys}")
+        VK_MAP = {
+            "ctrl": 0x11,
+            "control": 0x11,
+            "alt": 0x12,
+            "shift": 0x10,
+            "win": 0x5B,
+            "windows": 0x5B,
+            "enter": 0x0D,
+            "return": 0x0D,
+            "tab": 0x09,
+            "escape": 0x1B,
+            "esc": 0x1B,
+            "backspace": 0x08,
+            "space": 0x20,
+            "delete": 0x2E,
+            "del": 0x2E,
+            "up": 0x26,
+            "down": 0x28,
+            "left": 0x25,
+            "right": 0x27,
+            "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73, "f5": 0x74, "f6": 0x75,
+            "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
+        }
+
+        if self.user32:
+            vk_list = []
+            for k in keys:
+                k_lower = str(k).lower().strip()
+                if k_lower in VK_MAP:
+                    vk_list.append(VK_MAP[k_lower])
+                elif len(k_lower) == 1 and ('a' <= k_lower <= 'z' or '0' <= k_lower <= '9'):
+                    vk_list.append(ord(k_lower.upper()))
+
+            # Key down
+            for vk in vk_list:
+                self.user32.keybd_event(vk, 0, 0, 0)
+                time.sleep(0.01)
+
+            time.sleep(0.04)
+
+            # Key up in reverse
+            for vk in reversed(vk_list):
+                self.user32.keybd_event(vk, 0, 2, 0)
+                time.sleep(0.01)
+        else:
+            print(f"[Simulated Shortcut] {keys}")
 
 
 # -------------------------------------------------------------
@@ -222,6 +472,7 @@ class ClientConnection:
     def run(self):
         try:
             self.sock.settimeout(60.0)
+            # 1. Perform HTTP / WebSocket Handshake
             request = self.sock.recv(4096)
             if not request:
                 return
@@ -232,7 +483,8 @@ class ClientConnection:
                 self.websocket_loop()
             else:
                 self.handle_http_request(req_str)
-        except Exception:
+        except Exception as e:
+            # Connection closed or socket timeout
             pass
         finally:
             self.running = False
@@ -266,6 +518,7 @@ class ClientConnection:
         self.is_websocket = True
 
     def handle_http_request(self, req_str: str):
+        """Serves QR and status page if someone opens in browser."""
         qr_json = json.dumps(self.helper_state.get_qr_payload(), indent=2)
         html = f"""<!DOCTYPE html>
 <html>
@@ -308,11 +561,11 @@ class ClientConnection:
             if frame is None:
                 break
             opcode, payload = frame
-            if opcode == 0x8:
+            if opcode == 0x8:  # Close
                 break
-            elif opcode == 0x9:
-                self.send_frame(0xA, payload)
-            elif opcode == 0x1:
+            elif opcode == 0x9:  # Ping
+                self.send_frame(0xA, payload)  # Pong
+            elif opcode == 0x1:  # Text
                 try:
                     text = payload.decode("utf-8")
                     data = json.loads(text)
@@ -390,6 +643,7 @@ class ClientConnection:
             phone_name = data.get("deviceName", "WebMouse Phone")
 
             if self.helper_state.verify_pairing_token(token):
+                # Valid token! Generate permanent credential
                 credential = secrets.token_urlsafe(32)
                 save_trusted_device(phone_device_id, phone_name, credential)
 
@@ -405,9 +659,10 @@ class ClientConnection:
                     "deviceName": self.helper_state.config["deviceName"],
                     "credential": credential,
                 })
+                # Follow with connection_ready
                 self.send_json({
                     "type": "connection_ready",
-                    "capabilities": ["mouse"],
+                    "capabilities": ["mouse", "keyboard"],
                 })
             else:
                 self.send_json({
@@ -439,7 +694,7 @@ class ClientConnection:
                 })
                 self.send_json({
                     "type": "connection_ready",
-                    "capabilities": ["mouse"],
+                    "capabilities": ["mouse", "keyboard"],
                 })
             else:
                 self.send_json({
@@ -452,6 +707,7 @@ class ClientConnection:
 
         # 3. MOUSE COMMANDS (MUST BE AUTHENTICATED)
         if not self.is_authenticated:
+            # SECURITY: Unknown device rejected, no mouse control allowed!
             self.send_json({"type": "error", "message": "Unauthorized"})
             self.sock.close()
             return
@@ -473,6 +729,45 @@ class ClientConnection:
             dx = data.get("dx", 0)
             dy = data.get("dy", 0)
             self.helper_state.mouse.scroll(dx, dy)
+        elif mtype == "open_app":
+            app = str(data.get("app", "")).strip()
+            ok = self.helper_state.mouse.open_application(app)
+            self.send_json({"type": "app_opened", "app": app, "success": ok})
+        elif mtype in ("open_url", "share_link"):
+            url = str(data.get("url", "")).strip()
+            ok = self.helper_state.mouse.open_url(url)
+            self.send_json({"type": "url_opened", "url": url, "success": ok})
+        elif mtype == "media_control":
+            action = str(data.get("action", "")).strip()
+            self.helper_state.mouse.media_control(action)
+            self.send_json({"type": "media_ok", "action": action, "success": True})
+        elif mtype == "quick_control":
+            action = str(data.get("action", "")).strip()
+            self.helper_state.mouse.quick_control(action)
+            self.send_json({"type": "quick_ok", "action": action, "success": True})
+        elif mtype == "type_text":
+            text = str(data.get("text", ""))
+            self.helper_state.mouse.type_text(text)
+            self.send_json({"type": "text_ok", "length": len(text), "success": True})
+        elif mtype == "key":
+            key_name = str(data.get("key", ""))
+            self.helper_state.mouse.press_key(key_name)
+        elif mtype == "shortcut":
+            keys = data.get("keys", [])
+            self.helper_state.mouse.press_shortcut(keys)
+            self.send_json({"type": "shortcut_ok", "keys": keys, "success": True})
+        elif mtype == "voice_command":
+            # Direct voice command execution
+            query = str(data.get("query", "")).strip()
+            action = str(data.get("action", ""))
+            target = str(data.get("target", ""))
+            if action == "open_url" and target:
+                self.helper_state.mouse.open_url(target)
+            elif action == "open_app" and target:
+                self.helper_state.mouse.open_application(target)
+            else:
+                self.helper_state.mouse.open_application(query)
+            self.send_json({"type": "voice_ok", "query": query, "success": True})
         elif mtype == "ping":
             self.send_json({"type": "pong"})
 
@@ -529,6 +824,9 @@ class HelperState:
             self.gui_callback(status)
 
 
+# -------------------------------------------------------------
+# 7. SERVER SOCKET LISTENER THREAD
+# -------------------------------------------------------------
 def run_server(helper_state: HelperState):
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -551,6 +849,11 @@ def run_server(helper_state: HelperState):
             break
 
 
+# -------------------------------------------------------------
+# 8. PURE PYTHON QR MATRIX ENCODER (ZERO PIP DEPENDENCIES)
+# -------------------------------------------------------------
+# A lightweight QR Code model encoder for rendering on Tkinter canvas.
+# If Pillow / qrcode library is available, uses it. Otherwise uses clean ASCII/canvas matrix.
 def generate_qr_matrix(text: str):
     try:
         import qrcode
@@ -566,14 +869,18 @@ def generate_qr_matrix(text: str):
     except ImportError:
         pass
 
+    # Simple built-in matrix fallback or pseudo-matrix for display
+    # Generate reproducible visual hash pattern for local testing if qrcode pip is missing
     size = 25
     matrix = [[False for _ in range(size)] for _ in range(size)]
+    # Add standard Finder Patterns in corners
     for r in range(7):
         for c in range(7):
             matrix[r][c] = (r in (0, 6) or c in (0, 6) or (2 <= r <= 4 and 2 <= c <= 4))
             matrix[r][size - 7 + c] = (r in (0, 6) or c in (0, 6) or (2 <= r <= 4 and 2 <= c <= 4))
             matrix[size - 7 + r][c] = (r in (0, 6) or c in (0, 6) or (2 <= r <= 4 and 2 <= c <= 4))
 
+    # Fill data from text hash
     h = hashlib.sha256(text.encode("utf-8")).digest()
     bit_idx = 0
     for r in range(size):
@@ -586,6 +893,9 @@ def generate_qr_matrix(text: str):
     return matrix
 
 
+# -------------------------------------------------------------
+# 9. NATIVE WINDOWS TKINTER GUI ("Pair WebMouse")
+# -------------------------------------------------------------
 def run_gui(helper_state: HelperState):
     try:
         import tkinter as tk
@@ -601,6 +911,7 @@ def run_gui(helper_state: HelperState):
     root.resizable(False, False)
     root.configure(bg="#0f172a")
 
+    # Header Card
     header_frame = tk.Frame(root, bg="#0f172a")
     header_frame.pack(fill="x", padx=24, pady=(20, 10))
 
@@ -624,6 +935,7 @@ def run_gui(helper_state: HelperState):
     )
     subtitle_label.pack(anchor="w", pady=(2, 0))
 
+    # QR Code Canvas Container
     qr_card = tk.Frame(root, bg="#1e293b", bd=1, relief="solid")
     qr_card.pack(padx=24, pady=12)
 
@@ -647,6 +959,7 @@ def run_gui(helper_state: HelperState):
 
     draw_qr()
 
+    # Status & Device Info Card
     info_frame = tk.Frame(root, bg="#1e293b", bd=0)
     info_frame.pack(fill="x", padx=24, pady=8)
 
@@ -668,6 +981,7 @@ def run_gui(helper_state: HelperState):
     )
     status_label.pack(pady=(0, 8))
 
+    # Buttons Frame
     btn_frame = tk.Frame(root, bg="#0f172a")
     btn_frame.pack(fill="x", padx=24, pady=(12, 16))
 
@@ -695,6 +1009,7 @@ def run_gui(helper_state: HelperState):
 
     def on_hide():
         root.withdraw()
+        print("[Helper] Running in background. Double-click run_helper.bat or helper shortcut to open.")
 
     hide_btn = tk.Button(
         btn_frame,
@@ -726,10 +1041,25 @@ def run_gui(helper_state: HelperState):
     root.mainloop()
 
 
+# -------------------------------------------------------------
+# 10. MAIN ENTRYPOINT
+# -------------------------------------------------------------
 def main():
+    print("==================================================")
+    print("WebMouse V2 — Windows Companion Helper")
+    print("==================================================")
     state = HelperState()
+    print(f"Device Name : {state.config['deviceName']}")
+    print(f"Device ID   : {state.config['deviceId']}")
+    print(f"Detected IP : {state.current_ip}")
+    print(f"Port        : {PORT}")
+    print("--------------------------------------------------")
+
+    # Start WebSocket server thread
     srv_thread = threading.Thread(target=run_server, args=(state,), daemon=True)
     srv_thread.start()
+
+    # Start Native GUI
     run_gui(state)
 
 

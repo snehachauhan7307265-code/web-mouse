@@ -46,11 +46,19 @@ class ConnectionManager {
     return () => this.messageListeners.delete(listener);
   }
 
-  public sendMessage(msg: any): void {
+  public sendMessage(msg: any): boolean {
     if (this.state !== 'CONNECTED' || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return;
+      console.warn('[ConnectionManager] Cannot send message, not connected:', msg);
+      return false;
     }
-    this.socket.send(JSON.stringify(msg));
+    try {
+      const payload = typeof msg === 'string' ? msg : JSON.stringify(msg);
+      this.socket.send(payload);
+      return true;
+    } catch (e) {
+      console.error('[ConnectionManager] Failed to send message:', e);
+      return false;
+    }
   }
 
   private setState(newState: ConnectionState, message?: string) {
