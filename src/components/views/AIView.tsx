@@ -160,6 +160,13 @@ export const AIView: React.FC<AIViewProps> = ({
   const handleExecute = async (cmdText?: string) => {
     const textToRun = (cmdText || inputCommand || transcript).trim();
     if (!textToRun) return;
+
+    if (!isConnected) {
+      setStatusType('error');
+      setStatusMessage('PC is not connected. Please connect first.');
+      return;
+    }
+
     if (isProcessing && !cmdText) return;
 
     triggerHaptic('medium', vibrationEnabled);
